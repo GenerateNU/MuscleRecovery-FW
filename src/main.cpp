@@ -6,22 +6,23 @@
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define DATA_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-#define DATETIME_CHARACTERISTIC_UUID "a5b17d6a-68e5-4f33-abe0-e393e4cd7305"
+#define OFFLOAD_DATETIME_CHARACTERISTIC_UUID "a5b17d6a-68e5-4f33-abe0-e393e4cd7305"
 #define SESSION_START_CHARACTERISTIC_UUID "87ffeadd-3d01-45cd-89bd-ec5a6880c009"
 #define OFFLOAD_DATA_CHARACTERISTIC_UUID "f392f003-1c58-4017-9e01-bf89c7eb53bd"
+#define OFFLOAD_SESSION_COUNT_UUID "630f3455-b378-4b93-8cf5-79225891f94c"
 #define EEPROM_SIZE 512
-#define IDENTIFIER_BITS 4
+#define IDENTIFIER_BYTES 4
 
 #define SAMPLES_PER_SEC 860
 
 // DO NOT UNCOMMENT UNLESS YOU WANT TO ERASE EEPROM
 //#define CLEAR_EEPROM 
 
-#define SESSION_BYTES 14
+#define SESSION_BYTES 16
 
 #define DATA_BYTES 10
 
-#define DATETIME_BYTES 4
+#define DATETIME_BYTES 6
 
 //TODO: set pin
 int SESSION_BUTTON = 4;
@@ -30,6 +31,7 @@ BLECharacteristic *pData;
 BLECharacteristic *pDateTime;
 BLECharacteristic *pSessionStart;
 BLECharacteristic *pOffloadData;
+BLECharacteristic *pNumSessions;
 BLEServer *pServer;
 bool deviceConnected = false;
 
@@ -54,8 +56,8 @@ uint8_t numDataSent = 0;
 bool offloadedDataBefore = true;
 
 struct data {
-  uint8_t muscleData[10];
-  uint8_t dateTime[4]; // Send day, month, year, time
+  uint8_t muscleData[DATA_BYTES];
+  uint8_t dateTime[DATETIME_BYTES]; // Send day, month, year, time
 };
 
 data currData;
@@ -76,16 +78,6 @@ class MyServerCallbacks: public BLEServerCallbacks {
     }
 };
 
-
-void clearEEPROM() {
-    for (int i = 0; i < EEPROM_SIZE; i++) {
-      EEPROM.put(i, 0);
-    }
-    EEPROM.put(0, 4); // first four bytes used
-    EEPROM.commit();
-    Serial.println("EEPROM cleared");
-}
-
 int dataRecorded() {
   uint8_t oneToTwoDigit; // ex 1...99
   uint8_t threeToFourDigit; // ex 100...9900
@@ -97,6 +89,14 @@ int dataRecorded() {
   EEPROM.get(3, sevenToEightDigit);
 
   return oneToTwoDigit + (100 * threeToFourDigit) + (10000 * fiveToSixDigit) + (1000000 * sevenToEightDigit);
+}
+
+void clearEEPROM() {
+    for (int i = 0; i < EEPROM_SIZE; i++) {
+      EEPROM.put(i, 0);
+    }
+    EEPROM.put(0, 4); // first four bytes used
+    EEPROM.commit();
 }
 
 
@@ -154,7 +154,6 @@ void storeData(data d) {
 
 
 void getAllData(std::vector<data>& allData) {
-  Serial.println(String(dataRecorded() - 4) + " bytes cleared");
   for (int address = 4; address < dataRecorded(); address += SESSION_BYTES) {
     data session;
     EEPROM.get(address, session);
@@ -176,13 +175,6 @@ void setup() {
 
   pinMode(SESSION_BUTTON, INPUT);
 
-  #ifdef CLEAR_EEPROM
-  if (!eepromCleared) {
-    clearEEPROM();
-    eepromCleared = true;
-  }
-  #endif
-
   Serial.println("Starting BLE work!");
 
   BLEDevice::init("Generate ECE Muscle Recovery");
@@ -198,7 +190,7 @@ void setup() {
                                        );
 
   pDateTime = pService->createCharacteristic(
-                                         DATETIME_CHARACTERISTIC_UUID,
+                                         OFFLOAD_DATETIME_CHARACTERISTIC_UUID,
                                          BLECharacteristic::PROPERTY_READ |
                                          BLECharacteristic::PROPERTY_NOTIFY 
                                        );
@@ -212,7 +204,12 @@ void setup() {
                                          BLECharacteristic::PROPERTY_WRITE |
                                          BLECharacteristic::PROPERTY_NOTIFY 
                                        );
-                                     
+
+  pNumSessions = pService->createCharacteristic(
+                                        OFFLOAD_SESSION_COUNT_UUID,
+                                        BLECharacteristic::PROPERTY_READ |
+                                        BLECharacteristic::PROPERTY_NOTIFY 
+                                      );                                   
   pService->start();
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
@@ -220,10 +217,12 @@ void setup() {
   pAdvertising->setMinPreferred(0x06);
   pAdvertising->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
-  Serial.println("Characteristics defined! Now you can read it on your phone!");
   Serial.println("EEPROM size " + String(EEPROM.length()));
 
+
+  clearEEPROM();
   data data1;
+  data data2;
   data1.muscleData[0] = 0;
   data1.muscleData[1] = 1;
   data1.muscleData[2] = 2;
@@ -238,7 +237,36 @@ void setup() {
   data1.dateTime[1] = 4;
   data1.dateTime[2] = 5;
   data1.dateTime[3] = 6;
+  data1.dateTime[4] = 7;
+  data1.dateTime[5] = 8;
+
+  data2.muscleData[0] = 0;
+  data2.muscleData[1] = 100;
+  data2.muscleData[2] = 110;
+  data2.muscleData[3] = 120;
+  data2.muscleData[4] = 130;
+  data2.muscleData[5] = 140;
+  data2.muscleData[6] = 150;
+  data2.muscleData[7] = 160;
+  data2.muscleData[8] = 170;
+  data2.muscleData[9] = 180;
+  data2.dateTime[0] = 190;
+  data2.dateTime[1] = 200;
+  data2.dateTime[2] = 210;
+  data2.dateTime[3] = 220;
+  data2.dateTime[4] = 230;
+  data2.dateTime[5] = 240;
   storeData(data1);
+  storeData(data2);
+  storeData(data1);
+
+  // Serial.println("DATA INITIALLY STORED: " + String(dataRecorded() - 4));
+
+  // for (int i = 0; i < 512; i++) {
+  //   uint8_t num;
+  //   EEPROM.get(i, num);
+  //   Serial.println(num);
+  // }
 }
 
 // TODO: client side must stop sending after it gets values
@@ -254,16 +282,35 @@ boolean sessionStartedFromButtonPress() {
   return false;//digitalRead(SESSION_BUTTON) == LOW;
 }
 
+uint8_t* sessionCountInBytes() {
+  uint8_t* sessionCount = new uint8_t[4]; // Allocate memory dynamically
+  sessionCount[0] = EEPROM.read(0) - 4;
+  sessionCount[1] = EEPROM.read(1);
+  sessionCount[2] = EEPROM.read(2);
+  sessionCount[3] = EEPROM.read(3);
+  return sessionCount;
+} 
+
 // Offloads all data stored in flash
 void offLoadData() {
   if (!offloadedDataBefore) {
     Serial.println("Offloading saved data");
     std::vector<data> allData;
     getAllData(allData);
+    uint8_t* muscleDataOffloadArray = new uint8_t[allData.size() * DATA_BYTES];
+    uint8_t* muscleDatetimeOffloadArray = new uint8_t[allData.size() * DATETIME_BYTES];
     for (int dataIndex = 0; dataIndex < allData.size(); dataIndex++) {
-      pOffloadData->setValue(allData.at(dataIndex).muscleData, sizeof(allData.at(dataIndex).muscleData));
-      pDateTime->setValue(allData.at(dataIndex).dateTime, sizeof(allData.at(dataIndex).dateTime));
+      for (int muscleIndex = 0; muscleIndex < DATA_BYTES; muscleIndex++) {
+        muscleDataOffloadArray[(dataIndex * DATA_BYTES) + muscleIndex] = allData.at(dataIndex).muscleData[muscleIndex];
+      }
+      for (int dateIndex = 0; dateIndex < DATETIME_BYTES; dateIndex++) {
+        muscleDatetimeOffloadArray[(dataIndex * DATETIME_BYTES) + dateIndex] = allData.at(dataIndex).dateTime[dateIndex];
+      }
     }
+    pNumSessions->setValue(sessionCountInBytes(), sizeof(sessionCountInBytes()));
+    pOffloadData->setValue(muscleDataOffloadArray, DATA_BYTES * allData.size());
+    pDateTime->setValue(muscleDatetimeOffloadArray, DATETIME_BYTES * allData.size());
+    Serial.println("All " + String(dataRecorded() - 4) + " bytes in EEPROM cleared or " + String((dataRecorded() - 4) / 16) + " sessions.");
     clearEEPROM();
     offloadedDataBefore = true;
   }
@@ -280,7 +327,7 @@ void saveData() {
     }
     else if (numDataSent == SESSION_BYTES) {
       Serial.println("Saving data");
-      storeData(currData);
+      //storeData(currData);
       numDataSent = 0;
     }
   }
