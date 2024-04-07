@@ -15,13 +15,8 @@
 
 #define SAMPLES_PER_SEC 860
 
-// DO NOT UNCOMMENT UNLESS YOU WANT TO ERASE EEPROM
-//#define CLEAR_EEPROM 
-
 #define SESSION_BYTES 16
-
 #define DATA_BYTES 10
-
 #define DATETIME_BYTES 6
 
 //TODO: set pin
@@ -55,13 +50,20 @@ uint8_t numDataSent = 0;
 
 bool offloadedDataBefore = true;
 
-struct data {
+/**
+ * Our data struct that contains the EMG readings and datetime.
+*/
+struct Data {
   uint8_t muscleData[DATA_BYTES];
   uint8_t dateTime[DATETIME_BYTES]; // Send day, month, year, time
 };
 
-data currData;
+// Raw data being recorded in present time from a button press
+Data currData;
 
+/**
+ * Simple callbacks to determine a BLE connection.
+*/
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       deviceConnected = true;
@@ -78,6 +80,9 @@ class MyServerCallbacks: public BLEServerCallbacks {
     }
 };
 
+/**
+ * The total data in bytes currently stored in flash memory.
+*/
 int dataRecorded() {
   uint8_t oneToTwoDigit; // ex 1...99
   uint8_t threeToFourDigit; // ex 100...9900
@@ -91,6 +96,9 @@ int dataRecorded() {
   return oneToTwoDigit + (100 * threeToFourDigit) + (10000 * fiveToSixDigit) + (1000000 * sevenToEightDigit);
 }
 
+/**
+ * Clears the entirety of EEPROM and resets the first four identifier bytes.
+*/
 void clearEEPROM() {
     for (int i = 0; i < EEPROM_SIZE; i++) {
       EEPROM.put(i, 0);
@@ -99,8 +107,10 @@ void clearEEPROM() {
     EEPROM.commit();
 }
 
-
-void storeData(data d) {
+/**
+ * Stores the given Data in flash.
+*/
+void storeData(Data d) {
 
   // 4 first bytes represent number of bytes used
   uint8_t oneToTwoDigit; // ex 1...99
@@ -152,10 +162,12 @@ void storeData(data d) {
   EEPROM.commit();
 }
 
-
-void getAllData(std::vector<data>& allData) {
+/**
+ * Places all sessions stored in flash in the given vector of Data.
+*/
+void getAllData(std::vector<Data>& allData) {
   for (int address = 4; address < dataRecorded(); address += SESSION_BYTES) {
-    data session;
+    Data session;
     EEPROM.get(address, session);
     allData.push_back(session);
   }
@@ -182,7 +194,7 @@ void setup() {
   pServer->setCallbacks(new MyServerCallbacks());
   BLEService *pService = pServer->createService(SERVICE_UUID);
 
-  // Sends muscle data to client
+  // BLE characteristic initializations
   pData = pService->createCharacteristic(
                                          DATA_CHARACTERISTIC_UUID,
                                          BLECharacteristic::PROPERTY_READ |
@@ -221,8 +233,8 @@ void setup() {
 
 
   clearEEPROM();
-  data data1;
-  data data2;
+  Data data1;
+  Data data2;
   data1.muscleData[0] = 0;
   data1.muscleData[1] = 1;
   data1.muscleData[2] = 2;
@@ -269,7 +281,9 @@ void setup() {
   // }
 }
 
-// TODO: client side must stop sending after it gets values
+/**
+ * Alerts the device that a session has been started over BLE.
+*/
 void sessionStartedOverBLE() {
   std::string s = pSessionStart->getValue();
   if (s=="yes") {
@@ -278,10 +292,17 @@ void sessionStartedOverBLE() {
   }
 }
 
+/**
+ * Session started from button press.
+*/
 boolean sessionStartedFromButtonPress() {
+  //TODO: Unimplemented, may be difficult due to timing and debounce
   return false;//digitalRead(SESSION_BUTTON) == LOW;
 }
 
+/**
+ * Determines the number of sessions in bytes.
+*/
 uint8_t* sessionCountInBytes() {
   uint8_t* sessionCount = new uint8_t[4]; // Allocate memory dynamically
   sessionCount[0] = EEPROM.read(0) - 4;
@@ -291,11 +312,13 @@ uint8_t* sessionCountInBytes() {
   return sessionCount;
 } 
 
-// Offloads all data stored in flash
+/**
+ * Offloads all data in flash, sends over BLE, and clears memory.
+*/
 void offLoadData() {
   if (!offloadedDataBefore) {
     Serial.println("Offloading saved data");
-    std::vector<data> allData;
+    std::vector<Data> allData;
     getAllData(allData);
     uint8_t* muscleDataOffloadArray = new uint8_t[allData.size() * DATA_BYTES];
     uint8_t* muscleDatetimeOffloadArray = new uint8_t[allData.size() * DATETIME_BYTES];
@@ -316,7 +339,9 @@ void offLoadData() {
   }
 }
 
-//TODO: Need to save date time 
+/**
+ * Saves raw Data from a session started from button press into flash.
+*/
 void saveData() {
   if (sessionStartedFromButtonPress()) {
     Serial.println("Session started off button press");
@@ -333,7 +358,9 @@ void saveData() {
   }
 }
 
-// TODO: something weird here
+/**
+ * Streams data over BLE if a session was started over BLE.
+*/
 void streamData() {
   sessionStartedOverBLE();
   if (!oneSessionStreamed) {
@@ -361,7 +388,11 @@ void streamData() {
   
 }
 
+/**
+ * Sensor reading 860 times per second.
+*/
 void updateReading() {
+  //TODO: Unimplemented
   // Averages out 860 samples per second
   startTime = micros();
   if (startTime - prevTime >= 1160)   //  almost exact 860 SPS
