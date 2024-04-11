@@ -262,15 +262,14 @@ void setup() {
   data2.muscleData[7] = 160;
   data2.muscleData[8] = 170;
   data2.muscleData[9] = 180;
-  data2.dateTime[0] = 190;
-  data2.dateTime[1] = 200;
-  data2.dateTime[2] = 210;
-  data2.dateTime[3] = 220;
-  data2.dateTime[4] = 230;
-  data2.dateTime[5] = 240;
+  data2.dateTime[0] = 24;
+  data2.dateTime[1] = 4;
+  data2.dateTime[2] = 11;
+  data2.dateTime[3] = 2;
+  data2.dateTime[4] = 27;
+  data2.dateTime[5] = 30;
   storeData(data1);
   storeData(data2);
-  storeData(data1);
 
   // Serial.println("DATA INITIALLY STORED: " + String(dataRecorded() - 4));
 
