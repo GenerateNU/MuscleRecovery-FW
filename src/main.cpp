@@ -760,6 +760,7 @@ void nonBLEStore() {
         indexToInsert = 0;
         storeData(currData);
         promptRefreshed = false;
+        curr_state = SESSION_COMPLETE;
       }
   }
 }
@@ -1011,7 +1012,6 @@ void stateMachine() {
 
       checkSessionButtonStart();
       nonBLEStore();
-      curr_state = SESSION_COMPLETE;
       break;
 
     case SESSION_COMPLETE:
