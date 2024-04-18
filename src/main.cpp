@@ -49,6 +49,8 @@ uint32_t startSessionCount = 0;
 
 uint8_t numDataSent = 0;
 
+int numSecondsStreamed = 0;
+
 bool offloadedDataBefore = true;
 
 // Declare any global constants or macros here
@@ -411,7 +413,7 @@ float ADStomV(uint16_t newValue)
     return dataPoint;
 };
 
-int dataAcquisition()
+void dataAcquisition()
 {
   uint32_t now = micros();
 
@@ -452,7 +454,7 @@ int dataAcquisition()
     // pData->setValue(pointToSend);
 
     dataWindow.clear();
-    return pointToSend;
+    pData->setValue(pointToSend);
   }
 }
 
@@ -477,10 +479,12 @@ void streamData() {
     //   numDataSent = 0;
     //   oneSessionStreamed = true;
     // }
-
-
-    pData->setValue(dataAcquisition());
-    oneSessionStreamed = true;
+    dataAcquisition();
+    numSecondsStreamed++;
+    if (numSecondsStreamed == DATA_BYTES) {
+      oneSessionStreamed = true;
+      numSecondsStreamed = 0;
+    }
   }
   
 }
