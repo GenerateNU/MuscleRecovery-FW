@@ -760,8 +760,10 @@ void nonBLEStore() {
         indexToInsert = 0;
         storeData(currData);
         promptRefreshed = false;
-        curr_state = SESSION_COMPLETE;
       }
+  }
+  else {
+    curr_state = SESSION_COMPLETE;
   }
 }
 
@@ -839,8 +841,10 @@ void streamData() {
       oneSessionStreamed = true;
       numSecondsStreamed = 0;
       promptRefreshed = false;
-      curr_state = SESSION_COMPLETE;
     }
+  }
+  else {
+    curr_state = SESSION_COMPLETE;
   }
   
 }
