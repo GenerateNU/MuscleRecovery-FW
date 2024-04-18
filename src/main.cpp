@@ -5,6 +5,7 @@
 #include "ADS1X15.h"
 #include <cstdint>
 #include <RTClib.h>
+#include <SPI.h>
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define DATA_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
@@ -44,7 +45,7 @@ bool eepromCleared = false;
 
 ADS1115 ADS(0x48);
 
-RTC_PCF8563 rtc;
+//RTC_PCF8563 rtc;
 
 uint32_t startTime = 0;
 uint32_t prevTime = 0;
@@ -120,24 +121,24 @@ class MyServerCallbacks: public BLEServerCallbacks {
 };
 
 
-// This function will store the current date time into data struct for spi flash storage
-void storeCurrentDateTime() {
-  DateTime now = rtc.now();
-  currData.dateTime[0] = now.year(); // year
-  currData.dateTime[1] = now.month(); // month
-  currData.dateTime[2] = now.day(); // day
-  currData.dateTime[3] = now.hour(); // hour
-  currData.dateTime[4] = now.minute(); // minute
-  currData.dateTime[5] = now.second(); // second
-}
+// // This function will store the current date time into data struct for spi flash storage
+// void storeCurrentDateTime() {
+//   DateTime now = rtc.now();
+//   currData.dateTime[0] = now.year(); // year
+//   currData.dateTime[1] = now.month(); // month
+//   currData.dateTime[2] = now.day(); // day
+//   currData.dateTime[3] = now.hour(); // hour
+//   currData.dateTime[4] = now.minute(); // minute
+//   currData.dateTime[5] = now.second(); // second
+// }
 
-// This function will take the BLE characteristic pDateTimeSet and update the RTC
-void setCurrentDateTime() {
-  std::string newDateTime = pDateTimeSet->getValue();
-  rtc.adjust(DateTime((uint8_t) newDateTime[0], (uint8_t) newDateTime[1],
-                      (uint8_t) newDateTime[2], (uint8_t) newDateTime[3], 
-                      (uint8_t) newDateTime[4], (uint8_t) newDateTime[5]));
-}
+// // This function will take the BLE characteristic pDateTimeSet and update the RTC
+// void setCurrentDateTime() {
+//   std::string newDateTime = pDateTimeSet->getValue();
+//   rtc.adjust(DateTime((uint8_t) newDateTime[0], (uint8_t) newDateTime[1],
+//                       (uint8_t) newDateTime[2], (uint8_t) newDateTime[3], 
+//                       (uint8_t) newDateTime[4], (uint8_t) newDateTime[5]));
+// }
 
 /**
  * The total data in bytes currently stored in flash memory.
@@ -234,10 +235,10 @@ void getAllData(std::vector<Data>& allData) {
 
 void setup() {
   // Set RTC to 1/1/2000 at midnight
-  rtc.adjust(DateTime(2000, 1, 1, 0, 0, 0));
+  // rtc.adjust(DateTime(2000, 1, 1, 0, 0, 0));
   // Start rtc
 
-  rtc.start();
+  // rtc.start();
   EEPROM.begin(EEPROM_SIZE);  
   Serial.begin(115200);
 
@@ -499,7 +500,14 @@ void dataAcquisitionForNoBLE()
     dataWindow.clear();
 
     if (indexToInsert == 0) {
-      storeCurrentDateTime();
+      // storeCurrentDateTime();
+      currData.dateTime[0] = 0;
+      currData.dateTime[1] = 0;
+      currData.dateTime[2] = 0;
+      currData.dateTime[3] = 0;
+      currData.dateTime[4] = 0;
+      currData.dateTime[5] = 0;
+      
     }
     currData.muscleData[indexToInsert] = pointToSend;
     indexToInsert++;
@@ -508,7 +516,7 @@ void dataAcquisitionForNoBLE()
 
 void nonBLEStore() {
     if (!oneSessionStreamed) {
-    dataAcquisitionForNoBLE();
+      dataAcquisitionForNoBLE();
     if (indexToInsert == DATA_BYTES) {
       oneSessionStreamed = true;
       indexToInsert = 0;
@@ -656,7 +664,6 @@ void stateMachine() {
     // Check for session button press or over BLE
     case STORE:
       Serial.println("STORE state"); 
-      delay(1000);
       nonBLEStore();
       curr_state = SESSION_COMPLETE;
       break;
