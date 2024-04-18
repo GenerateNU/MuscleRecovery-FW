@@ -58,7 +58,6 @@ bool isPowerOn;
 
 int powerState;            // the current reading from the input pin
 int lastPowerState = LOW;  // the previous reading from the input pin
-unsigned long lastPowerDebounceTime = 0;  // the last time the output pin was toggledc
 
 
 int sessionState;            // the current reading from the input pin
@@ -81,6 +80,7 @@ bool deviceConnected = false;
 bool oneSessionStreamed = true;
 bool promptRefreshed = false;
 bool poweredOff = false;
+bool sessionButtonReleased = false;
 
 unsigned long prvMillis;
 int valNotify;
@@ -119,6 +119,8 @@ double samplingRate = 860;
 double alpha = cutoffFreq / (cutoffFreq + samplingRate);
 double lastOutput = 0;
 std::vector<float> dataWindow;
+
+unsigned long lastPowerDebounceTime = 0;
 
 
 enum STATES {
@@ -947,23 +949,26 @@ if ((millis() - lastPowerDebounceTime) > debounceDelay) {
 
 }
 
-void checkSessionStart() {
+void checkSessionButtonStart() {
 
    // read the state of the switch into a local variable:
-  int powerReading = digitalRead(ACTION_BUTTON_PIN);
+  int sessionButtonReading = digitalRead(ACTION_BUTTON_PIN);
 
-  
+  unsigned long lastSessionButtonDebounceTime = 0;  // the last time the output pin was toggledc
+
   // If the switch changed, due to noise or pressing:
-  if (powerReading == HIGH) {
+  if (sessionButtonReading == HIGH) {
     // reset the debouncing timer
-    lastPowerDebounceTime = millis();
+    lastSessionButtonDebounceTime = millis();
+  }
+  else {
+    sessionButtonReleased = true;
   }
 
-if ((millis() - lastPowerDebounceTime) > debounceDelay) {
+if ((millis() - lastSessionButtonDebounceTime) > debounceDelay && sessionButtonReleased) {
     // set oneSessionStreamed to false
     Serial.println("Session Button Pressed");
     oneSessionStreamed = false;
-
   }
 }
 
@@ -1027,7 +1032,7 @@ void stateMachine() {
       updateDisplay(3.14);
 
       Serial.println("STREAM state");
-      checkSessionStart();
+      checkSessionButtonStart();
       sessionStartedOverBLE();
       offLoadData();
       streamData();
@@ -1039,7 +1044,7 @@ void stateMachine() {
     case STORE:
       Serial.println("STORE state"); 
 
-      checkSessionStart();
+      checkSessionButtonStart();
       nonBLEStore();
       curr_state = SESSION_COMPLETE;
       break;
