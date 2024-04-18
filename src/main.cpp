@@ -359,46 +359,6 @@ void setup() {
   BLEDevice::startAdvertising();
   Serial.println("EEPROM size " + String(EEPROM.length()));
 
-
-  clearEEPROM();
-  Data data1;
-  Data data2;
-  data1.muscleData[0] = 0;
-  data1.muscleData[1] = 1;
-  data1.muscleData[2] = 2;
-  data1.muscleData[3] = 0;
-  data1.muscleData[4] = 1;
-  data1.muscleData[5] = 2;
-  data1.muscleData[6] = 0;
-  data1.muscleData[7] = 1;
-  data1.muscleData[8] = 2;
-  data1.muscleData[9] = 3;
-  data1.dateTime[0] = 3;
-  data1.dateTime[1] = 4;
-  data1.dateTime[2] = 5;
-  data1.dateTime[3] = 6;
-  data1.dateTime[4] = 7;
-  data1.dateTime[5] = 8;
-
-  data2.muscleData[0] = 0;
-  data2.muscleData[1] = 100;
-  data2.muscleData[2] = 110;
-  data2.muscleData[3] = 120;
-  data2.muscleData[4] = 130;
-  data2.muscleData[5] = 140;
-  data2.muscleData[6] = 150;
-  data2.muscleData[7] = 160;
-  data2.muscleData[8] = 170;
-  data2.muscleData[9] = 180;
-  data2.dateTime[0] = 24;
-  data2.dateTime[1] = 4;
-  data2.dateTime[2] = 11;
-  data2.dateTime[3] = 2;
-  data2.dateTime[4] = 27;
-  data2.dateTime[5] = 30;
-  storeData(data1);
-  storeData(data2);
-
   isPowerOn = false;
   curr_state = OFF;
 
@@ -590,8 +550,6 @@ void updateTimeDisplay() {
 
 //NEED TO EDIT THIS 
 void updateDisplay(float measurement) {
-  
-
   
   tft.setFont(NULL);
   tft.fillScreen(ST77XX_BLACK); // Clear the screen
@@ -880,6 +838,7 @@ void streamData() {
       oneSessionStreamed = true;
       numSecondsStreamed = 0;
       promptRefreshed = false;
+      curr_state = SESSION_COMPLETE;
     }
   }
   
@@ -1042,7 +1001,6 @@ void stateMachine() {
       sessionStartedOverBLE();
       offLoadData();
       streamData();
-      curr_state = SESSION_COMPLETE;
       break;
 
 
