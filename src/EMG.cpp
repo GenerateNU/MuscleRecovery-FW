@@ -1,4 +1,4 @@
-// #include "EMG.h"
+// #include "EMG.hpp"
 
 // LowPassFilter::LowPassFilter(double cutoffFreq, double samplingRate) {
 //     alpha = cutoffFreq / (cutoffFreq + samplingRate);

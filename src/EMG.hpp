@@ -1,5 +1,10 @@
+<<<<<<< HEAD:src/EMG.h
 // #ifndef EMG_H
 // #define EMG_H
+=======
+#ifndef EMG_HPP
+#define EMG_HPP
+>>>>>>> 4c3f4966a824d589c9f0810b5bbb9c3adc3e3be7:src/EMG.hpp
 
 // // Include any necessary headers here
 // #include "ADS1X15.h"
@@ -25,8 +30,14 @@
 //     double filter(double inputValue)
 // };
 
+<<<<<<< HEAD:src/EMG.h
 // // Declare any function prototypes here
 // void dataAcquisition();
 // float ADStomV(uint16_t newValue);
+=======
+// Declare any function prototypes here
+float ADStomV(uint16_t newValue);
+void dataAcquisition();
+>>>>>>> 4c3f4966a824d589c9f0810b5bbb9c3adc3e3be7:src/EMG.hpp
 
 // #endif // EMG_H
