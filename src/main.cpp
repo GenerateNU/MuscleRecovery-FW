@@ -57,6 +57,7 @@ uint32_t startSessionCount = 0;
 uint8_t numDataSent = 0;
 
 int numSecondsStreamed = 0;
+int indexToInsert = 0;
 
 bool offloadedDataBefore = true;
 
@@ -456,7 +457,67 @@ float ADStomV(uint16_t newValue)
     return dataPoint;
 };
 
-void dataAcquisition()
+void dataAcquisitionForNoBLE()
+{
+  uint32_t now = micros();
+
+  // Process EMG data
+  if (now - lastSample >= 1160)   //  almost exact 860 SPS
+  {
+    lastSample = now;
+    value = ADS.getValue();       // read value from ADC
+    value = ADStomV(value);       // convert value to mV and rectify
+    // Serial.print(value);
+    prev = filter(value);
+    // prev *= 2;
+
+    // add data value to vector
+    dataWindow.push_back(prev);
+    // adcQueue.addValue(lpf.filter(value));     // add value to queue and filter it
+    Serial.print("previous value is: ");
+    Serial.println(prev); //value / 2^16 * 3.3
+  }
+
+  // every second, average the values in the dataWindow
+  if (now - lastSample2 >= 1000000)
+  {
+    lastSample2 = now;
+    // calculate the average of the dataWindow
+    Serial.print("every half second, average the values in the dataWindow...");
+    float average = 0;
+    for (int dataIndex = 0; dataIndex < dataWindow.size(); dataIndex++) {
+      average += dataWindow.at(dataIndex);
+    }
+    int pointToSend = average / 0.01259843;
+    Serial.print("average is: ");
+    Serial.println(average);
+    Serial.print("pointToSend is: ");
+    Serial.println(pointToSend);
+
+    //currData.muscleData[numDataSent] = pointToSend;
+    // pData->setValue(pointToSend);
+    dataWindow.clear();
+
+    if (indexToInsert == 0) {
+      storeCurrentDateTime();
+    }
+    currData.muscleData[indexToInsert] = pointToSend;
+    indexToInsert++;
+  }
+}
+
+void nonBLEStore() {
+    if (!oneSessionStreamed) {
+    dataAcquisitionForNoBLE();
+    if (indexToInsert == DATA_BYTES) {
+      oneSessionStreamed = true;
+      indexToInsert = 0;
+      storeData(currData);
+    }
+  }
+}
+
+void dataAcquisitionForBLE()
 {
   uint32_t now = micros();
 
@@ -522,7 +583,7 @@ void streamData() {
     //   numDataSent = 0;
     //   oneSessionStreamed = true;
     // }
-    dataAcquisition();
+    dataAcquisitionForBLE();
     numSecondsStreamed++;
     if (numSecondsStreamed == DATA_BYTES) {
       oneSessionStreamed = true;
@@ -596,6 +657,7 @@ void stateMachine() {
     case STORE:
       Serial.println("STORE state"); 
       delay(1000);
+      nonBLEStore();
       curr_state = SESSION_COMPLETE;
       break;
 
