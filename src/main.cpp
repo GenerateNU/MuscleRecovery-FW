@@ -6,6 +6,24 @@
 #include <cstdint>
 #include <RTClib.h>
 
+//imports for tft screen 
+#include <Adafruit_GFX.h>    // Core graphics library
+#include <Adafruit_ST7789.h> // Hardware-specific library for ST7789
+#include <SPI.h>
+
+//font imports for tft screen
+#include <Fonts/FreeMonoBold12pt7b.h>
+#include <Fonts/FreeMonoBold18pt7b.h>
+
+//REV 2 PCB PINOUT
+#define TFT_CS 4
+#define TFT_RST 15
+#define TFT_DC 2
+
+//button pinouts 
+#define POWER_BUTTON_PIN 26
+#define ACTION_BUTTON_PIN 35 //need to change later 
+
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define DATA_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define OFFLOAD_DATETIME_CHARACTERISTIC_UUID "a5b17d6a-68e5-4f33-abe0-e393e4cd7305"
@@ -23,8 +41,33 @@
 #define DATA_BYTES 10
 #define DATETIME_BYTES 6
 
-//TODO: set pin
-int SESSION_BUTTON = 4;
+// For 1.14", 1.3", 1.54", 1.69", and 2.0" TFT with ST7789:
+Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
+
+//TFT SCREEN CONSTANTS
+const int screenWidth = tft.width(); 
+const int screenHeight = tft.height(); 
+const int centerX = tft.width() / 2;
+const int centerY = tft.height() / 2;
+
+//for starting a session timer
+unsigned long sessionStartTime;
+
+//boolenas for power on and off might not need
+bool isPowerOn; 
+bool isSessionActive = false; //might not need !!!
+
+int powerState;            // the current reading from the input pin
+int lastPowerState = LOW;  // the previous reading from the input pin
+unsigned long lastPowerDebounceTime = 0;  // the last time the output pin was toggledc
+
+
+int sessionState;            // the current reading from the input pin
+int lastSessionState = LOW;  // the previous reading from the input pin
+unsigned long lastSessionDebounceTime = 0;  // the last time the output pin was toggled
+
+const unsigned long debounceDelay = 50; // Debounce time in milliseconds
+
 
 BLECharacteristic *pData;
 BLECharacteristic *pDateTime;
@@ -120,24 +163,24 @@ class MyServerCallbacks: public BLEServerCallbacks {
 };
 
 
-// This function will store the current date time into data struct for spi flash storage
-void storeCurrentDateTime() {
-  DateTime now = rtc.now();
-  currData.dateTime[0] = now.year(); // year
-  currData.dateTime[1] = now.month(); // month
-  currData.dateTime[2] = now.day(); // day
-  currData.dateTime[3] = now.hour(); // hour
-  currData.dateTime[4] = now.minute(); // minute
-  currData.dateTime[5] = now.second(); // second
-}
+// // This function will store the current date time into data struct for spi flash storage
+// void storeCurrentDateTime() {
+//   DateTime now = rtc.now();
+//   currData.dateTime[0] = now.year(); // year
+//   currData.dateTime[1] = now.month(); // month
+//   currData.dateTime[2] = now.day(); // day
+//   currData.dateTime[3] = now.hour(); // hour
+//   currData.dateTime[4] = now.minute(); // minute
+//   currData.dateTime[5] = now.second(); // second
+// }
 
 // This function will take the BLE characteristic pDateTimeSet and update the RTC
-void setCurrentDateTime() {
-  std::string newDateTime = pDateTimeSet->getValue();
-  rtc.adjust(DateTime((uint8_t) newDateTime[0], (uint8_t) newDateTime[1],
-                      (uint8_t) newDateTime[2], (uint8_t) newDateTime[3], 
-                      (uint8_t) newDateTime[4], (uint8_t) newDateTime[5]));
-}
+// void setCurrentDateTime() {
+//   std::string newDateTime = pDateTimeSet->getValue();
+//   rtc.adjust(DateTime((uint8_t) newDateTime[0], (uint8_t) newDateTime[1],
+//                       (uint8_t) newDateTime[2], (uint8_t) newDateTime[3], 
+//                       (uint8_t) newDateTime[4], (uint8_t) newDateTime[5]));
+// }
 
 /**
  * The total data in bytes currently stored in flash memory.
@@ -234,10 +277,10 @@ void getAllData(std::vector<Data>& allData) {
 
 void setup() {
   // Set RTC to 1/1/2000 at midnight
-  rtc.adjust(DateTime(2000, 1, 1, 0, 0, 0));
+  //rtc.adjust(DateTime(2000, 1, 1, 0, 0, 0));
   // Start rtc
 
-  rtc.start();
+  //rtc.start();
   EEPROM.begin(EEPROM_SIZE);  
   Serial.begin(115200);
 
@@ -249,7 +292,12 @@ void setup() {
   ADS.setMode(0);      //  continuous mode
   ADS.readADC(0);      //  first read to trigger
 
-  pinMode(SESSION_BUTTON, INPUT);
+  pinMode(POWER_BUTTON_PIN, INPUT);
+  pinMode(ACTION_BUTTON_PIN, INPUT);
+
+    // use this initializer if using a 1.3" or 1.54" 240x240 TFT:
+  tft.init(240, 240);           // Init ST7789 240x240
+  tft.fillScreen(ST77XX_BLACK);
 
   Serial.println("Starting BLE work!");
 
@@ -346,7 +394,8 @@ void setup() {
   storeData(data1);
   storeData(data2);
 
-  curr_state = WELCOME;
+  isPowerOn = false;
+  curr_state = OFF;
 
   // Serial.println("DATA INITIALLY STORED: " + String(dataRecorded() - 4));
 
@@ -356,6 +405,236 @@ void setup() {
   //   Serial.println(num);
   // }
 }
+
+//TFT SCREEN CODE
+
+//draw arrow helper method
+void drawArrow() {
+
+  int base = 50;
+  int height = 150;
+  
+  int x = centerX + 60;
+  int y = centerY - (height / 4 );
+
+  
+  // Coordinates for a right-pointing arrow
+  int x0 = x - base / 2;
+  int y0 = y - height / 2;
+  int x1 = x - base / 2;
+  int y1 = y + height / 2;
+  int x2 = x + base / 2;
+  int y2 = y;
+
+// char buffer[256]; // Ensure the buffer is large enough to hold the entire string
+//sprintf(buffer, "x0: %d y0: %d x1: %d y1: %d x2: %d y2: %d", x0, y0, x1, y1, x2, y2);
+//Serial.println(buffer);
+
+  tft.fillTriangle(x0, y0, x1, y1, x2, y2, ST77XX_RED);
+  tft.fillTriangle(x0, y0 , x1, y1 , x2 - 20, y2, ST77XX_BLACK);
+}
+
+
+//center text helper method
+void centerText(String text, int numLines, int x, int y) {
+  int16_t x1, y1;
+  uint16_t w, h;
+  int lineHeight = 30;
+  int totalHeight = lineHeight * numLines;
+  int currentY = y - (totalHeight / 2);
+  tft.setFont(&FreeMonoBold12pt7b);
+  
+  for (int i = 0; i < numLines; i++) {
+    int newLinePos = text.indexOf('\n');
+    String line = (newLinePos != -1) ? text.substring(0, newLinePos) : text;
+    text = (newLinePos != -1) ? text.substring(newLinePos + 1) : "";
+    tft.getTextBounds(line, 0, 0, &x1, &y1, &w, &h);
+    tft.setCursor(x - w / 2, currentY);
+    tft.print(line);
+    currentY += lineHeight;
+  }
+}
+
+void textScreen(String text) {
+  tft.fillScreen(ST77XX_BLACK); // Clear the screen and set the background to black
+  
+  tft.setFont(&FreeMonoBold18pt7b); 
+  tft.setTextColor(ST77XX_WHITE); // Set the text color to white
+  tft.setTextSize(1); // Set the text size
+
+ int splitPosition = text.indexOf(' ');
+  if (splitPosition != -1) {
+    String firstPart = text.substring(0, splitPosition);
+    String secondPart = text.substring(splitPosition + 1);
+
+    // Calculate the width and height of the first part
+    int16_t x1, y1;
+    uint16_t w1, h1;
+    tft.getTextBounds(firstPart, 0, 0, &x1, &y1, &w1, &h1);
+
+    // Calculate the width and height of the second part
+    int16_t x2, y2;
+    uint16_t w2, h2;
+    tft.getTextBounds(secondPart, 0, 0, &x2, &y2, &w2, &h2);
+
+    // Calculate the total height to center the block vertically
+    int totalHeight = h1 + h2 ;
+
+    // Set cursor to print the first part centered horizontally and vertically
+    tft.setCursor(centerX - w1/2 , centerY - totalHeight/2 - h1 - 15 );
+    tft.println(firstPart);
+
+    // Set cursor to print the second part below the first and centered horizontally
+    tft.setCursor(centerX - w2/2 , centerY );
+    tft.println(secondPart);
+  } else {
+    // Handle case where there is no space in the string
+    int16_t x, y;
+    uint16_t w, h;
+    tft.getTextBounds(text, 0, 0, &x, &y, &w, &h);
+
+    tft.setCursor(centerX - w/2, centerY - h/2);
+    tft.println(text);
+  }
+}
+
+void POWEROFF() {
+  textScreen("Powering Off."); //NEED TO MOVE
+   
+  tft.fillScreen(ST77XX_BLACK);
+}
+
+void welcomeScreen() {
+  
+  tft.fillScreen(ST77XX_BLACK);
+  tft.setFont(&FreeMonoBold18pt7b); // Using a large font for better readability
+  tft.setTextColor(ST77XX_WHITE); // Setting text color to white
+  tft.setTextSize(1);
+
+  int charWidth = 20; 
+  int xWelcome = (screenWidth - (7 * charWidth)) / 2 ; // "Welcome" has 7 characters
+  int xTo = (screenWidth - (2 * charWidth)) / 2; // "to" has 2 characters
+  int xMuscle = (screenWidth - (6 * charWidth)) / 2; // "Muscle" has 6 characters
+  int xRecovery = (screenWidth - (8 * charWidth)) / 2; // "Recovery!" has 9 characters
+
+  int start = 70;
+  int offset = 40;
+  tft.setCursor(xWelcome, start);
+  tft.println(F("Welcome"));
+  tft.setCursor(xTo, start + offset);
+  tft.println(F("to"));
+  tft.setCursor(xMuscle, start + (offset*2));
+  tft.println(F("Muscle"));
+  tft.setCursor(xRecovery, start + (offset*3));
+  tft.println(F("Recovery"));
+
+  delay(4000);
+}
+
+void promptStart() {
+  tft.fillScreen(ST77XX_BLACK); // Fill background with blue color
+
+  // Set text properties
+  tft.setTextColor(ST77XX_WHITE); 
+  tft.setFont(&FreeMonoBold12pt7b);
+  tft.setTextSize(1);  
+
+  // Center text block
+  int centerX = tft.width() / 2;
+  int centerY = tft.height() / 2;
+  String text = "Press\nButton\nTo\nStart\nSession";
+
+  centerText(text, 5, centerX - 45, centerY + 20); // Adjust Y position as needed
+
+
+  drawArrow();
+}
+
+void updateTimeDisplay() {
+  tft.setFont(NULL);
+  unsigned long currentTime = millis();
+  unsigned long elapsedSeconds = (currentTime - startTime) / 1000; // Convert milliseconds to seconds
+
+  
+  unsigned long minutes = elapsedSeconds / 60; // Convert seconds to minutes
+  unsigned long seconds = elapsedSeconds % 60; // Correct the seconds to be within the range of 0-59
+  
+  
+   // Create time string for display
+  char timeString[6];
+  sprintf(timeString, "%02lu:%02lu", minutes, seconds);
+
+  // Get width and height of the time string with current text size
+  int16_t x1, y1;
+  uint16_t w, h;
+  tft.setTextSize(3);
+  tft.getTextBounds(timeString, 0, 0, &x1, &y1, &w, &h);
+
+  // Clear the previous time display
+  tft.fillRect((tft.width() - w) / 2, tft.height() - h - 10, w, h, ST77XX_BLACK);
+
+  // Set cursor position to center the time at the bottom
+  tft.setCursor((tft.width() - w) / 2, tft.height() - h - 10);
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+
+  // Draw new time
+  tft.print(timeString);
+}
+
+//NEED TO EDIT THIS 
+void updateDisplay(float measurement) {
+  
+
+  
+  tft.setFont(NULL);
+  tft.fillScreen(ST77XX_BLACK); // Clear the screen
+  
+ // Draw the measurement centered on the screen
+  char measureBuffer[10]; // Buffer to hold measurement string
+  dtostrf(measurement, 0, 2, measureBuffer); // Convert float to string
+  tft.setTextSize(5);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+  tft.getTextBounds(measureBuffer, 0, 0, &x1, &y1, &w, &h); // Calculate bounds of measurement string
+  tft.setCursor((tft.width() - w) / 2, (tft.height() - h) / 2); // Set cursor position to center the measurement
+  tft.print(measureBuffer);
+
+  tft.setTextSize(3); 
+  tft.getTextBounds(".00", 0, 0, &x1, &y1, &w, &h); // Calculate bounds of measurement string
+  tft.setCursor((tft.width()/2) + w, (tft.height() + h) / 2); // Set cursor position to center the measurement
+  tft.print("mV");
+
+  //NOT sure where this is happening 
+  updateTimeDisplay();
+  
+}
+
+
+
+
+//NOT BEING USED FOR SHOWCASE
+void promptDecision() {
+  tft.fillScreen(ST77XX_BLACK); // Fill background with blue color
+
+  // Set text properties
+  tft.setTextColor(ST77XX_WHITE); 
+  tft.setFont(&FreeMonoBold12pt7b); 
+  tft.setTextSize(1); 
+
+  // Center text block
+  int centerX = tft.width() / 2;
+  int centerY = tft.height() / 2;
+  String text = "Press\nTo Save\nHold To\nDelete";
+
+
+  centerText(text, 4, centerX - 45, centerY + 20); // Adjust Y position as needed
+
+ // Draw right-pointing arrow
+  drawArrow(); 
+
+}
+
 
 /**
  * Alerts the device that a session has been started over BLE.
@@ -498,9 +777,9 @@ void dataAcquisitionForNoBLE()
     // pData->setValue(pointToSend);
     dataWindow.clear();
 
-    if (indexToInsert == 0) {
-      storeCurrentDateTime();
-    }
+    // if (indexToInsert == 0) {
+    //   storeCurrentDateTime();
+    // }
     currData.muscleData[indexToInsert] = pointToSend;
     indexToInsert++;
   }
@@ -615,36 +894,106 @@ void updateReading() {
   }
 }
 
+void checkPowerState() {
+
+  
+   // read the state of the switch into a local variable:
+  int powerReading = digitalRead(POWER_BUTTON_PIN);
+
+  
+  // If the switch changed, due to noise or pressing:
+  if (powerReading != lastPowerState) {
+    // reset the debouncing timer
+    lastPowerDebounceTime = millis();
+  }
+
+if ((millis() - lastPowerDebounceTime) > debounceDelay) {
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if (powerReading != powerState) {
+      powerState = powerReading;
+
+
+      // only toggle the LED if the new button state is HIGH
+      if (powerState == HIGH) {
+        
+        Serial.println("Power Button Pressed");
+    
+        isPowerOn = !isPowerOn;
+
+        if (isPowerOn) {
+          curr_state = WELCOME;
+        } else 
+        {
+          curr_state = OFF;
+        }
+
+        Serial.println(isPowerOn? "Powered On" : "Powered Off");
+
+
+    
+      }
+    }
+  }
+  lastPowerState = powerReading;
+
+}
+
 void stateMachine() {
+
+  checkPowerState();
+   
   switch (curr_state) {
     case OFF:
       Serial.println("OFF state");
-      // Black Screen
-      // Wait for power button press
-      delay(1000);
-      curr_state = WELCOME;
+      
+      //TFT SCREEN
+      POWEROFF();
+      
+ 
       break;
 
     case WELCOME:
       Serial.println("WELCOME state");
-      // Welcome Screen
-      delay(1000);
+      
+      //TFT SCREEN
+      welcomeScreen();
+
+ 
       curr_state = PROMPT;
+
+   
+
       break;
 
     case PROMPT:
       Serial.println("PROMPT state");
 
+      //TFT SCREEN
+      promptStart();
+      //doesn't account for button press yet 
+
       if (deviceConnected) {
         curr_state = STREAM;
+
+        //STARTING TIMER 
+        sessionStartTime = millis();
       }
       else {
         offloadedDataBefore = false;
-        curr_state = STORE;
+        //curr_state = STORE;
+
+        //should wait for a button press here 
       }
+
       break;
 
     case STREAM:
+
+      updateDisplay(3.14);
+
       Serial.println("STREAM state");
       sessionStartedOverBLE();
       offLoadData();
@@ -656,14 +1005,14 @@ void stateMachine() {
     // Check for session button press or over BLE
     case STORE:
       Serial.println("STORE state"); 
-      delay(1000);
+
       nonBLEStore();
       curr_state = SESSION_COMPLETE;
       break;
 
     case SESSION_COMPLETE:
       Serial.println("SESSION_COMPLETE state");
-      delay(1000);
+
       curr_state = PROMPT;
       break;
 
@@ -673,9 +1022,17 @@ void stateMachine() {
 }
 
 
+
+
 void loop() {
   stateMachine();
 
 }
+
+
+
+
+
+
 
 //  -- END OF FILE --
