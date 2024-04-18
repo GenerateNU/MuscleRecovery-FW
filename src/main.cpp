@@ -63,6 +63,7 @@ int lastPowerState = LOW;  // the previous reading from the input pin
 int sessionState;            // the current reading from the input pin
 int lastSessionState = LOW;  // the previous reading from the input pin
 unsigned long lastSessionDebounceTime = 0;  // the last time the output pin was toggled
+unsigned long lastSessionButtonDebounceTime = 0;  // the last time the output pin was toggledc
 
 const unsigned long debounceDelay = 50; // Debounce time in milliseconds
 
@@ -793,12 +794,12 @@ void dataAcquisitionForNoBLE()
 void nonBLEStore() {
     if (!oneSessionStreamed) {
       dataAcquisitionForNoBLE();
-    if (indexToInsert == DATA_BYTES) {
-      oneSessionStreamed = true;
-      indexToInsert = 0;
-      storeData(currData);
-      promptRefreshed = false;
-    }
+      if (indexToInsert == DATA_BYTES) {
+        oneSessionStreamed = true;
+        indexToInsert = 0;
+        storeData(currData);
+        promptRefreshed = false;
+      }
   }
 }
 
@@ -954,18 +955,20 @@ void checkSessionButtonStart() {
    // read the state of the switch into a local variable:
   int sessionButtonReading = digitalRead(ACTION_BUTTON_PIN);
 
-  unsigned long lastSessionButtonDebounceTime = 0;  // the last time the output pin was toggledc
-
   // If the switch changed, due to noise or pressing:
   if (sessionButtonReading == HIGH) {
     // reset the debouncing timer
-    lastSessionButtonDebounceTime = millis();
+    if (!sessionButtonReleased) {
+      lastSessionButtonDebounceTime = millis();
+      sessionButtonReleased = true;
+    }
   }
   else {
-    sessionButtonReleased = true;
+    sessionButtonReleased = false;
+    lastSessionButtonDebounceTime = millis();
   }
 
-if ((millis() - lastSessionButtonDebounceTime) > debounceDelay && sessionButtonReleased) {
+if ((millis() - lastSessionButtonDebounceTime) > debounceDelay) {
     // set oneSessionStreamed to false
     Serial.println("Session Button Pressed");
     oneSessionStreamed = false;
