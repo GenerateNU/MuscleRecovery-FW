@@ -55,7 +55,6 @@ unsigned long sessionStartTime;
 
 //boolenas for power on and off might not need
 bool isPowerOn; 
-bool isSessionActive = false; //might not need !!!
 
 int powerState;            // the current reading from the input pin
 int lastPowerState = LOW;  // the previous reading from the input pin
@@ -80,6 +79,8 @@ BLEServer *pServer;
 bool deviceConnected = false;
 
 bool oneSessionStreamed = true;
+bool promptRefreshed = false;
+bool poweredOff = false;
 
 unsigned long prvMillis;
 int valNotify;
@@ -499,7 +500,8 @@ void textScreen(String text) {
 }
 
 void POWEROFF() {
-  textScreen("Powering Off."); //NEED TO MOVE
+  textScreen("Powering Off..."); //NEED TO MOVE
+  delay(1000);
    
   tft.fillScreen(ST77XX_BLACK);
 }
@@ -532,6 +534,7 @@ void welcomeScreen() {
 }
 
 void promptStart() {
+  
   tft.fillScreen(ST77XX_BLACK); // Fill background with blue color
 
   // Set text properties
@@ -792,6 +795,7 @@ void nonBLEStore() {
       oneSessionStreamed = true;
       indexToInsert = 0;
       storeData(currData);
+      promptRefreshed = false;
     }
   }
 }
@@ -867,6 +871,7 @@ void streamData() {
     if (numSecondsStreamed == DATA_BYTES) {
       oneSessionStreamed = true;
       numSecondsStreamed = 0;
+      promptRefreshed = false;
     }
   }
   
@@ -925,6 +930,7 @@ if ((millis() - lastPowerDebounceTime) > debounceDelay) {
 
         if (isPowerOn) {
           curr_state = WELCOME;
+          poweredOff = false;
         } else 
         {
           curr_state = OFF;
@@ -941,6 +947,26 @@ if ((millis() - lastPowerDebounceTime) > debounceDelay) {
 
 }
 
+void checkSessionStart() {
+
+   // read the state of the switch into a local variable:
+  int powerReading = digitalRead(ACTION_BUTTON_PIN);
+
+  
+  // If the switch changed, due to noise or pressing:
+  if (powerReading == HIGH) {
+    // reset the debouncing timer
+    lastPowerDebounceTime = millis();
+  }
+
+if ((millis() - lastPowerDebounceTime) > debounceDelay) {
+    // set oneSessionStreamed to false
+    Serial.println("Session Button Pressed");
+    oneSessionStreamed = false;
+
+  }
+}
+
 void stateMachine() {
 
   checkPowerState();
@@ -949,8 +975,10 @@ void stateMachine() {
     case OFF:
       Serial.println("OFF state");
       
-      //TFT SCREEN
-      POWEROFF();
+      if (!poweredOff) {
+        POWEROFF(); // UPDATE TFT SCREEN
+        poweredOff = true;
+      }
       
  
       break;
@@ -972,7 +1000,11 @@ void stateMachine() {
       Serial.println("PROMPT state");
 
       //TFT SCREEN
-      promptStart();
+      if (!promptRefreshed)
+      {
+        promptStart();
+        promptRefreshed = true;
+      }
       //doesn't account for button press yet 
 
       if (deviceConnected) {
@@ -983,7 +1015,7 @@ void stateMachine() {
       }
       else {
         offloadedDataBefore = false;
-        //curr_state = STORE;
+        curr_state = STORE;
 
         //should wait for a button press here 
       }
@@ -995,6 +1027,7 @@ void stateMachine() {
       updateDisplay(3.14);
 
       Serial.println("STREAM state");
+      checkSessionStart();
       sessionStartedOverBLE();
       offLoadData();
       streamData();
@@ -1006,6 +1039,7 @@ void stateMachine() {
     case STORE:
       Serial.println("STORE state"); 
 
+      checkSessionStart();
       nonBLEStore();
       curr_state = SESSION_COMPLETE;
       break;
@@ -1025,6 +1059,8 @@ void stateMachine() {
 
 
 void loop() {
+
+
   stateMachine();
 
 }
