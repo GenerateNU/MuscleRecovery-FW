@@ -534,7 +534,7 @@ void welcomeScreen() {
   tft.setCursor(xRecovery, start + (offset*3));
   tft.println(F("Recovery"));
 
-  delay(4000);
+  delay(2000);
 }
 
 void promptStart() {
@@ -991,6 +991,7 @@ void stateMachine() {
       if (!poweredOff) {
         POWEROFF(); // UPDATE TFT SCREEN
         poweredOff = true;
+        promptRefreshed = false;
       }
       
  
