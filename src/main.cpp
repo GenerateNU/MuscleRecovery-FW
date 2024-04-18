@@ -4,6 +4,7 @@
 #include <EEPROM.h>
 #include "ADS1X15.h"
 #include <cstdint>
+#include <RTClib.h>
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define DATA_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
@@ -11,6 +12,8 @@
 #define SESSION_START_CHARACTERISTIC_UUID "87ffeadd-3d01-45cd-89bd-ec5a6880c009"
 #define OFFLOAD_DATA_CHARACTERISTIC_UUID "f392f003-1c58-4017-9e01-bf89c7eb53bd"
 #define OFFLOAD_SESSION_COUNT_UUID "630f3455-b378-4b93-8cf5-79225891f94c"
+#define DATETIME_SET_CHARACTERISTIC_UUID "cc7d583a-5c96-4299-8f18-3dde34a6b1d7"
+#define PHYSCIAL_SESSION_START_CHARACTERISTIC_UUID "1a742a91-50e5-462e-bf5e-0d1fca990315"
 #define EEPROM_SIZE 512
 #define IDENTIFIER_BYTES 4
 
@@ -28,6 +31,8 @@ BLECharacteristic *pDateTime;
 BLECharacteristic *pSessionStart;
 BLECharacteristic *pOffloadData;
 BLECharacteristic *pNumSessions;
+BLECharacteristic *pDateTimeSet;
+BLECharacteristic *pPhysicalSessionStart;
 BLEServer *pServer;
 bool deviceConnected = false;
 
@@ -38,6 +43,8 @@ int valNotify;
 bool eepromCleared = false;
 
 ADS1115 ADS(0x48);
+
+RTC_PCF8563 rtc;
 
 uint32_t startTime = 0;
 uint32_t prevTime = 0;
@@ -110,6 +117,26 @@ class MyServerCallbacks: public BLEServerCallbacks {
       BLEDevice::startAdvertising();
     }
 };
+
+
+// This function will store the current date time into data struct for spi flash storage
+void storeCurrentDateTime() {
+  DateTime now = rtc.now();
+  currData.dateTime[0] = now.year(); // year
+  currData.dateTime[1] = now.month(); // month
+  currData.dateTime[2] = now.day(); // day
+  currData.dateTime[3] = now.hour(); // hour
+  currData.dateTime[4] = now.minute(); // minute
+  currData.dateTime[5] = now.second(); // second
+}
+
+// This function will take the BLE characteristic pDateTimeSet and update the RTC
+void setCurrentDateTime() {
+  std::string newDateTime = pDateTimeSet->getValue();
+  rtc.adjust(DateTime((uint8_t) newDateTime[0], (uint8_t) newDateTime[1],
+                      (uint8_t) newDateTime[2], (uint8_t) newDateTime[3], 
+                      (uint8_t) newDateTime[4], (uint8_t) newDateTime[5]));
+}
 
 /**
  * The total data in bytes currently stored in flash memory.
@@ -205,6 +232,11 @@ void getAllData(std::vector<Data>& allData) {
 }
 
 void setup() {
+  // Set RTC to 1/1/2000 at midnight
+  rtc.adjust(DateTime(2000, 1, 1, 0, 0, 0));
+  // Start rtc
+
+  rtc.start();
   EEPROM.begin(EEPROM_SIZE);  
   Serial.begin(115200);
 
@@ -252,7 +284,18 @@ void setup() {
                                         OFFLOAD_SESSION_COUNT_UUID,
                                         BLECharacteristic::PROPERTY_READ |
                                         BLECharacteristic::PROPERTY_NOTIFY 
-                                      );                                   
+                                      );    
+
+  pDateTimeSet = pService->createCharacteristic(
+                                         DATETIME_SET_CHARACTERISTIC_UUID,
+                                         BLECharacteristic::PROPERTY_WRITE |
+                                         BLECharacteristic::PROPERTY_NOTIFY 
+                                       );       
+  pPhysicalSessionStart = pService->createCharacteristic(
+                                         PHYSCIAL_SESSION_START_CHARACTERISTIC_UUID,
+                                         BLECharacteristic::PROPERTY_READ |
+                                         BLECharacteristic::PROPERTY_NOTIFY 
+                                       );                 
   pService->start();
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
