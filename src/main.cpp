@@ -5,6 +5,7 @@
 #include "ADS1X15.h"
 #include <cstdint>
 #include <RTClib.h>
+#include <cmath>
 
 //imports for tft screen 
 #include <Adafruit_GFX.h>    // Core graphics library
@@ -773,6 +774,7 @@ void dataAcquisitionForNoBLE()
     for (int dataIndex = 0; dataIndex < dataWindow.size(); dataIndex++) {
       average += dataWindow.at(dataIndex);
     }
+    average = average / dataWindow.size();
     int pointToSend = average / 0.01259843;
     Serial.print("average is: ");
     Serial.println(average);
@@ -786,6 +788,7 @@ void dataAcquisitionForNoBLE()
     // if (indexToInsert == 0) {
     //   storeCurrentDateTime();
     // }
+    updateDisplay(std::floor(average * 100.0) / 100.0);
     currData.muscleData[indexToInsert] = pointToSend;
     indexToInsert++;
   }
@@ -834,6 +837,7 @@ void dataAcquisitionForBLE()
     for (int dataIndex = 0; dataIndex < dataWindow.size(); dataIndex++) {
       average += dataWindow.at(dataIndex);
     }
+    average = average / dataWindow.size();
     int pointToSend = average / 0.01259843;
     Serial.print("average is: ");
     Serial.println(average);
@@ -844,6 +848,7 @@ void dataAcquisitionForBLE()
     // pData->setValue(pointToSend);
 
     dataWindow.clear();
+    updateDisplay(std::floor(average * 100.0) / 100.0);
     pData->setValue(pointToSend);
   }
 }
@@ -1031,8 +1036,6 @@ void stateMachine() {
       break;
 
     case STREAM:
-
-      updateDisplay(3.14);
 
       Serial.println("STREAM state");
       checkSessionButtonStart();
