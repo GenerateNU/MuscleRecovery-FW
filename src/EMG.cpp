@@ -1,11 +1,24 @@
-// #include "EMG.hpp"
+// #include "ADS1X15.h"
+// #include <cstdint>
+// #include <vector>
 
-// LowPassFilter::LowPassFilter(double cutoffFreq, double samplingRate) {
-//     alpha = cutoffFreq / (cutoffFreq + samplingRate);
-//     lastOutput = 0;  // Initial state of the output (could be set to the first data point instead)
-// }
+// // Declare any global constants or macros here
+// #define DC_OFFSET_SIZE 1.5
 
-// double LowPassFilter::filter(double inputValue) {
+// // Declare any global variables here
+// float value = 0;
+// float prev  = 0;
+// uint32_t lastSample = 0;
+// uint32_t lastSample2 = 0;
+// uint32_t lastTime = 0;
+// double cutoffFreq = 20;
+// double samplingRate = 860;
+// double alpha = cutoffFreq / (cutoffFreq + samplingRate);
+// double lastOutput = 0;
+
+// std::vector<float> dataWindow;
+
+// double filter(double inputValue) {
 //     lastOutput = alpha * inputValue + (1 - alpha) * lastOutput;
 //     return lastOutput;
 // }
