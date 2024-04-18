@@ -1,5 +1,5 @@
-#ifndef EMG_H
-#define EMG_H
+#ifndef EMG_HPP
+#define EMG_HPP
 
 // Include any necessary headers here
 #include "ADS1X15.h"
@@ -26,7 +26,7 @@ public:
 };
 
 // Declare any function prototypes here
-void dataAcquisition();
 float ADStomV(uint16_t newValue);
+void dataAcquisition();
 
 #endif // EMG_H
