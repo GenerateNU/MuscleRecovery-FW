@@ -1,15 +1,5 @@
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEServer.h>
-#include <EEPROM.h>
 #include "ADS1X15.h"
-
-#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define DATA_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-#define OFFLOAD_DATETIME_CHARACTERISTIC_UUID "a5b17d6a-68e5-4f33-abe0-e393e4cd7305"
-#define SESSION_START_CHARACTERISTIC_UUID "87ffeadd-3d01-45cd-89bd-ec5a6880c009"
-#define OFFLOAD_DATA_CHARACTERISTIC_UUID "f392f003-1c58-4017-9e01-bf89c7eb53bd"
-#define OFFLOAD_SESSION_COUNT_UUID "630f3455-b378-4b93-8cf5-79225891f94c"
+#include "Bluetooth.hpp"
 #define EEPROM_SIZE 512
 #define IDENTIFIER_BYTES 4
 
@@ -22,19 +12,12 @@
 //TODO: set pin
 int SESSION_BUTTON = 4;
 
-BLECharacteristic *pData;
-BLECharacteristic *pDateTime;
-BLECharacteristic *pSessionStart;
-BLECharacteristic *pOffloadData;
-BLECharacteristic *pNumSessions;
-BLEServer *pServer;
-bool deviceConnected = false;
 
-bool oneSessionStreamed = true;
-
-unsigned long prvMillis;
 int valNotify;
-bool eepromCleared = false;
+
+Storage storage;
+Bluetooth bluetooth;
+
 
 // ADS1115 ADS(0x48);
 
@@ -50,128 +33,10 @@ uint8_t numDataSent = 0;
 
 bool offloadedDataBefore = true;
 
-/**
- * Our data struct that contains the EMG readings and datetime.
-*/
-struct Data {
-  uint8_t muscleData[DATA_BYTES];
-  uint8_t dateTime[DATETIME_BYTES]; // Send day, month, year, time
-};
-
 // Raw data being recorded in present time from a button press
 Data currData;
 
-/**
- * Simple callbacks to determine a BLE connection.
-*/
-class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
-      deviceConnected = true;
 
-      prvMillis = millis();
-      Serial.println("Device connected");
-    };
-
-    void onDisconnect(BLEServer* pServer) {
-      deviceConnected = false;
-      Serial.println("Device disconnected");
-      Serial.println("Starting BLE advertising again");
-      BLEDevice::startAdvertising();
-    }
-};
-
-/**
- * The total data in bytes currently stored in flash memory.
-*/
-int dataRecorded() {
-  uint8_t oneToTwoDigit; // ex 1...99
-  uint8_t threeToFourDigit; // ex 100...9900
-  uint8_t fiveToSixDigit; // ex 10,000...990,000
-  uint8_t sevenToEightDigit; // ex 1,000,000...99,000,000
-  EEPROM.get(0, oneToTwoDigit);
-  EEPROM.get(1, threeToFourDigit);
-  EEPROM.get(2, fiveToSixDigit);
-  EEPROM.get(3, sevenToEightDigit);
-
-  return oneToTwoDigit + (100 * threeToFourDigit) + (10000 * fiveToSixDigit) + (1000000 * sevenToEightDigit);
-}
-
-/**
- * Clears the entirety of EEPROM and resets the first four identifier bytes.
-*/
-void clearEEPROM() {
-    for (int i = 0; i < EEPROM_SIZE; i++) {
-      EEPROM.put(i, 0);
-    }
-    EEPROM.put(0, 4); // first four bytes used
-    EEPROM.commit();
-}
-
-/**
- * Stores the given Data in flash.
-*/
-void storeData(Data d) {
-
-  // 4 first bytes represent number of bytes used
-  uint8_t oneToTwoDigit; // ex 1...99
-  uint8_t threeToFourDigit; // ex 100...9900
-  uint8_t fiveToSixDigit; // ex 10,000...990,000
-  uint8_t sevenToEightDigit; // ex 1,000,000...99,000,000
-  EEPROM.get(0, oneToTwoDigit);
-  EEPROM.get(1, threeToFourDigit);
-  EEPROM.get(2, fiveToSixDigit);
-  EEPROM.get(3, sevenToEightDigit);
-
-  if (oneToTwoDigit > 99) {
-    threeToFourDigit += oneToTwoDigit / 100;
-    oneToTwoDigit = oneToTwoDigit % 100;
-  }
-
-  if (threeToFourDigit > 99) {
-    fiveToSixDigit += threeToFourDigit / 100;
-    threeToFourDigit = threeToFourDigit % 100;
-  }
-
-  if (fiveToSixDigit > 99) {
-    sevenToEightDigit += fiveToSixDigit / 100;
-    fiveToSixDigit = fiveToSixDigit % 100;
-  }
-
-  int sizeOfData = sizeof(d);
-
-  uint8_t d_sevenToEightDigit = sizeOfData / 1000000;
-  uint8_t d_fiveToSixDigit = (sizeOfData - (d_sevenToEightDigit * 1000000)) / 10000;
-  uint8_t d_threeToFourDigit = (sizeOfData - (d_sevenToEightDigit * 1000000) - (d_fiveToSixDigit * 10000)) / 100;
-  uint8_t d_oneToTwoDigit = sizeOfData % 100;
-
-  int availableSpace = EEPROM_SIZE - dataRecorded();
-
-  if (availableSpace >= sizeOfData) {
-  oneToTwoDigit += d_oneToTwoDigit;
-  threeToFourDigit += d_threeToFourDigit;
-  fiveToSixDigit += d_fiveToSixDigit;
-  sevenToEightDigit += d_sevenToEightDigit;
-  
-  EEPROM.put(EEPROM_SIZE - availableSpace, d);
-  }
-
-  EEPROM.put(0, oneToTwoDigit);
-  EEPROM.put(1, threeToFourDigit);
-  EEPROM.put(2, fiveToSixDigit);
-  EEPROM.put(3, sevenToEightDigit);
-  EEPROM.commit();
-}
-
-/**
- * Places all sessions stored in flash in the given vector of Data.
-*/
-void getAllData(std::vector<Data>& allData) {
-  for (int address = 4; address < dataRecorded(); address += SESSION_BYTES) {
-    Data session;
-    EEPROM.get(address, session);
-    allData.push_back(session);
-  }
-}
 
 void setup() {
   EEPROM.begin(EEPROM_SIZE);  
@@ -186,53 +51,10 @@ void setup() {
   // ADS.readADC(0);      //  first read to trigger
 
   pinMode(SESSION_BUTTON, INPUT);
-
-  Serial.println("Starting BLE work!");
-
-  BLEDevice::init("Generate ECE Muscle Recovery");
-  pServer = BLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
-  BLEService *pService = pServer->createService(SERVICE_UUID);
-
-  // BLE characteristic initializations
-  pData = pService->createCharacteristic(
-                                         DATA_CHARACTERISTIC_UUID,
-                                         BLECharacteristic::PROPERTY_READ |
-                                         BLECharacteristic::PROPERTY_NOTIFY
-                                       );
-
-  pDateTime = pService->createCharacteristic(
-                                         OFFLOAD_DATETIME_CHARACTERISTIC_UUID,
-                                         BLECharacteristic::PROPERTY_READ |
-                                         BLECharacteristic::PROPERTY_NOTIFY 
-                                       );
-  pOffloadData = pService->createCharacteristic(
-                                         OFFLOAD_DATA_CHARACTERISTIC_UUID,
-                                         BLECharacteristic::PROPERTY_READ |
-                                         BLECharacteristic::PROPERTY_NOTIFY 
-                                       );                                   
-  pSessionStart = pService->createCharacteristic(
-                                         SESSION_START_CHARACTERISTIC_UUID,
-                                         BLECharacteristic::PROPERTY_WRITE |
-                                         BLECharacteristic::PROPERTY_NOTIFY 
-                                       );
-
-  pNumSessions = pService->createCharacteristic(
-                                        OFFLOAD_SESSION_COUNT_UUID,
-                                        BLECharacteristic::PROPERTY_READ |
-                                        BLECharacteristic::PROPERTY_NOTIFY 
-                                      );                                   
-  pService->start();
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  pAdvertising->setMinPreferred(0x06);
-  pAdvertising->setMinPreferred(0x12);
-  BLEDevice::startAdvertising();
+                                
   Serial.println("EEPROM size " + String(EEPROM.length()));
 
-
-  clearEEPROM();
+  storage.clearEEPROM();
   Data data1;
   Data data2;
   data1.muscleData[0] = 0;
@@ -268,8 +90,8 @@ void setup() {
   data2.dateTime[3] = 2;
   data2.dateTime[4] = 27;
   data2.dateTime[5] = 30;
-  storeData(data1);
-  storeData(data2);
+  storage.storeData(data1);
+  storage.storeData(data2);
 
   // Serial.println("DATA INITIALLY STORED: " + String(dataRecorded() - 4));
 
@@ -280,16 +102,6 @@ void setup() {
   // }
 }
 
-/**
- * Alerts the device that a session has been started over BLE.
-*/
-void sessionStartedOverBLE() {
-  std::string s = pSessionStart->getValue();
-  if (s=="yes") {
-    Serial.println("Session started via BLE");
-    oneSessionStreamed = false;
-  }
-}
 
 /**
  * Session started from button press.
@@ -299,93 +111,26 @@ boolean sessionStartedFromButtonPress() {
   return false;//digitalRead(SESSION_BUTTON) == LOW;
 }
 
-/**
- * Determines the number of sessions in bytes.
-*/
-uint8_t* sessionCountInBytes() {
-  uint8_t* sessionCount = new uint8_t[4]; // Allocate memory dynamically
-  sessionCount[0] = EEPROM.read(0) - 4;
-  sessionCount[1] = EEPROM.read(1);
-  sessionCount[2] = EEPROM.read(2);
-  sessionCount[3] = EEPROM.read(3);
-  return sessionCount;
-} 
-
-/**
- * Offloads all data in flash, sends over BLE, and clears memory.
-*/
-void offLoadData() {
-  if (!offloadedDataBefore) {
-    Serial.println("Offloading saved data");
-    std::vector<Data> allData;
-    getAllData(allData);
-    uint8_t* muscleDataOffloadArray = new uint8_t[allData.size() * DATA_BYTES];
-    uint8_t* muscleDatetimeOffloadArray = new uint8_t[allData.size() * DATETIME_BYTES];
-    for (int dataIndex = 0; dataIndex < allData.size(); dataIndex++) {
-      for (int muscleIndex = 0; muscleIndex < DATA_BYTES; muscleIndex++) {
-        muscleDataOffloadArray[(dataIndex * DATA_BYTES) + muscleIndex] = allData.at(dataIndex).muscleData[muscleIndex];
-      }
-      for (int dateIndex = 0; dateIndex < DATETIME_BYTES; dateIndex++) {
-        muscleDatetimeOffloadArray[(dataIndex * DATETIME_BYTES) + dateIndex] = allData.at(dataIndex).dateTime[dateIndex];
-      }
-    }
-    pNumSessions->setValue(sessionCountInBytes(), sizeof(sessionCountInBytes()));
-    pOffloadData->setValue(muscleDataOffloadArray, DATA_BYTES * allData.size());
-    pDateTime->setValue(muscleDatetimeOffloadArray, DATETIME_BYTES * allData.size());
-    Serial.println("All " + String(dataRecorded() - 4) + " bytes in EEPROM cleared or " + String((dataRecorded() - 4) / 16) + " sessions.");
-    clearEEPROM();
-    offloadedDataBefore = true;
-  }
-}
 
 /**
  * Saves raw Data from a session started from button press into flash.
 */
-void saveData() {
-  if (sessionStartedFromButtonPress()) {
-    Serial.println("Session started off button press");
-    if (numDataSent < SESSION_BYTES) {
-      Serial.println("Getting array of data");
-      currData.muscleData[numDataSent] = averagedEMGValue;
-      numDataSent++;
-    }
-    else if (numDataSent == SESSION_BYTES) {
-      Serial.println("Saving data");
-      //storeData(currData);
-      numDataSent = 0;
-    }
-  }
-}
+// void saveData() {
+//   if (sessionStartedFromButtonPress()) {
+//     Serial.println("Session started off button press");
+//     if (numDataSent < SESSION_BYTES) {
+//       Serial.println("Getting array of data");
+//       currData.muscleData[numDataSent] = averagedEMGValue;
+//       numDataSent++;
+//     }
+//     else if (numDataSent == SESSION_BYTES) {
+//       Serial.println("Saving data");
+//       //storeData(currData);
+//       numDataSent = 0;
+//     }
+//   }
+// }
 
-/**
- * Streams data over BLE if a session was started over BLE.
-*/
-void streamData() {
-  sessionStartedOverBLE();
-  if (!oneSessionStreamed) {
-    // if (numDataSent <= SESSION_BYTES) {
-    //   // int t = 3;
-    //   // uint8_t data[sizeof(t)];
-    //   // memcpy(data, &t, sizeof(t));
-
-    //   // // Set the value of the characteristic
-    //   // pData->setValue(data, sizeof(data));
-    //   pData->setValue(averagedEMGValue);
-    //   numDataSent++;
-    // } 
-    // else {
-    //   Serial.println("One session streamed");
-    //   numDataSent = 0;
-    //   oneSessionStreamed = true;
-    // }
-    for (int i = 0; i < 10; i++) {
-      pData->setValue(i);
-      delay(1000);
-    }
-    oneSessionStreamed = true;
-  }
-  
-}
 
 /**
  * Sensor reading 860 times per second.
@@ -411,7 +156,7 @@ void updateReading() {
 
 void loop() {
 
-  updateReading();
+  //updateReading();
 
   // TODO: Display on TFT here
 
@@ -419,11 +164,10 @@ void loop() {
 
   // Sends value using BLE
   if (deviceConnected) {
-    offLoadData();
-    streamData();
+    bluetooth.offLoadData(storage);
+    bluetooth.streamData();
     }
   else {
-    saveData();
     offloadedDataBefore = false;
     }
 }
