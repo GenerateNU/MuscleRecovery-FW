@@ -23,7 +23,7 @@
 
 //button pinouts 
 #define POWER_BUTTON_PIN 26
-#define ACTION_BUTTON_PIN 35 //need to change later 
+#define ACTION_BUTTON_PIN 16 //need to change later 
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define DATA_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
@@ -42,6 +42,8 @@
 #define DATA_BYTES 10
 #define DATETIME_BYTES 6
 
+#define MAPTO8BIT 0.01259843
+
 // For 1.14", 1.3", 1.54", 1.69", and 2.0" TFT with ST7789:
 Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
 
@@ -51,8 +53,7 @@ const int screenHeight = tft.height();
 const int centerX = tft.width() / 2;
 const int centerY = tft.height() / 2;
 
-//for starting a session timer
-unsigned long sessionStartTime;
+
 
 //boolenas for power on and off might not need
 bool isPowerOn; 
@@ -360,7 +361,7 @@ void setup() {
   Serial.println("EEPROM size " + String(EEPROM.length()));
 
   isPowerOn = false;
-  curr_state = STREAM;
+  curr_state = OFF;
 
   // Serial.println("DATA INITIALLY STORED: " + String(dataRecorded() - 4));
 
@@ -461,6 +462,8 @@ void textScreen(String text) {
     tft.setCursor(centerX - w/2, centerY - h/2);
     tft.println(text);
   }
+
+  delay(2000);
 }
 
 void POWEROFF() {
@@ -519,9 +522,10 @@ void promptStart() {
 
 void updateTimeDisplay() {
   tft.setFont(NULL);
-  unsigned long elapsedSeconds = numSecondsStreamed + 1; // Convert milliseconds to seconds
 
-  
+
+  unsigned long elapsedSeconds = (curr_state == STREAM) ? numSecondsStreamed + 1 : indexToInsert + 1; // Convert milliseconds to seconds
+
   unsigned long minutes = elapsedSeconds / 60; // Convert seconds to minutes
   unsigned long seconds = elapsedSeconds % 60; // Correct the seconds to be within the range of 0-59
   
@@ -609,7 +613,7 @@ void sessionStartedOverBLE() {
   std::string s = pSessionStart->getValue();
   if (s=="yes") {
     Serial.println("Session started via BLE");
-    sessionStartTime = millis();
+
     oneSessionStreamed = false;
   }
 }
@@ -670,6 +674,10 @@ void saveData() {
     if (numDataSent < SESSION_BYTES) {
       Serial.println("Getting array of data");
       currData.muscleData[numDataSent] = averagedEMGValue;
+      // this is jank, fix later
+      if (numDataSent < 6) {
+        currData.dateTime[numDataSent] = 0;
+      }
       numDataSent++;
     }
     else if (numDataSent == SESSION_BYTES) {
@@ -745,11 +753,8 @@ void dataAcquisitionForNoBLE()
     // pData->setValue(pointToSend);
     dataWindow.clear();
 
-    // if (indexToInsert == 0) {
-    //   storeCurrentDateTime();
-    // }
-    // updateDisplay(std::floor(average * 100.0) / 100.0);
-
+    updateDisplay(std::floor(average * 100.0) / 100.0);
+   
     currData.muscleData[indexToInsert] = pointToSend;
     indexToInsert++;
   }
@@ -759,13 +764,18 @@ void nonBLEStore() {
     if (!oneSessionStreamed) {
       dataAcquisitionForNoBLE();
       if (indexToInsert == DATA_BYTES) {
+
+       
         oneSessionStreamed = true;
         indexToInsert = 0;
         storeData(currData);
         promptRefreshed = false;
+         textScreen("Session Complete.");
+       
       }
   }
   else {
+    
     curr_state = SESSION_COMPLETE;
   }
 }
@@ -829,14 +839,17 @@ void streamData() {
     dataAcquisitionForBLE();
     
     if (numSecondsStreamed == DATA_BYTES) {
+     
       oneSessionStreamed = true;
       numSecondsStreamed = 0;
       promptRefreshed = false;
-      //Resetting TIMER 
-      sessionStartTime = millis();
+      textScreen("Session Complete.");
+
+    
     }
   }
   else {
+
     curr_state = SESSION_COMPLETE;
   }
   
@@ -938,12 +951,7 @@ void stateMachine() {
       
       //TFT SCREEN
       welcomeScreen();
-
- 
       curr_state = PROMPT;
-
-   
-
       break;
 
     case PROMPT:
