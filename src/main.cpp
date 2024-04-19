@@ -32,7 +32,6 @@
 #define OFFLOAD_DATA_CHARACTERISTIC_UUID "f392f003-1c58-4017-9e01-bf89c7eb53bd"
 #define OFFLOAD_SESSION_COUNT_UUID "630f3455-b378-4b93-8cf5-79225891f94c"
 #define DATETIME_SET_CHARACTERISTIC_UUID "cc7d583a-5c96-4299-8f18-3dde34a6b1d7"
-#define PHYSCIAL_SESSION_START_CHARACTERISTIC_UUID "1a742a91-50e5-462e-bf5e-0d1fca990315"
 #define EEPROM_SIZE 512
 #define IDENTIFIER_BYTES 4
 
@@ -76,7 +75,6 @@ BLECharacteristic *pSessionStart;
 BLECharacteristic *pOffloadData;
 BLECharacteristic *pNumSessions;
 BLECharacteristic *pDateTimeSet;
-BLECharacteristic *pPhysicalSessionStart;
 BLEServer *pServer;
 bool deviceConnected = false;
 
@@ -125,6 +123,7 @@ std::vector<float> dataWindow;
 
 unsigned long lastPowerDebounceTime = 0;
 
+String importedDatetime = "";
 
 enum STATES {
   OFF, WELCOME, PROMPT, STREAM, STORE, SESSION_COMPLETE
@@ -345,12 +344,7 @@ void setup() {
                                          DATETIME_SET_CHARACTERISTIC_UUID,
                                          BLECharacteristic::PROPERTY_WRITE |
                                          BLECharacteristic::PROPERTY_NOTIFY 
-                                       );       
-  pPhysicalSessionStart = pService->createCharacteristic(
-                                         PHYSCIAL_SESSION_START_CHARACTERISTIC_UUID,
-                                         BLECharacteristic::PROPERTY_READ |
-                                         BLECharacteristic::PROPERTY_NOTIFY 
-                                       );                 
+                                       );                                                 
   pService->start();
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
@@ -618,6 +612,16 @@ void sessionStartedOverBLE() {
   }
 }
 
+void importDatetime() {
+    std::uint8_t* importedDatetime = pDateTimeSet->getData();
+    uint8_t year = importedDatetime[0];
+    uint8_t month = importedDatetime[1];
+    uint8_t day = importedDatetime[2];
+    uint8_t hour = importedDatetime[3];
+    uint8_t minute = importedDatetime[4];
+    uint8_t second = importedDatetime[5];
+}
+
 /**
  * Session started from button press.
 */
@@ -656,6 +660,7 @@ void offLoadData() {
         muscleDatetimeOffloadArray[(dataIndex * DATETIME_BYTES) + dateIndex] = allData.at(dataIndex).dateTime[dateIndex];
       }
     }
+    importDatetime();
     pNumSessions->setValue(sessionCountInBytes(), sizeof(sessionCountInBytes()));
     pOffloadData->setValue(muscleDataOffloadArray, DATA_BYTES * allData.size());
     pDateTime->setValue(muscleDatetimeOffloadArray, DATETIME_BYTES * allData.size());
@@ -980,8 +985,6 @@ void stateMachine() {
     case STREAM:
 
       //Serial.println("STREAM state");
-      
-
       checkSessionButtonStart();
       sessionStartedOverBLE();
       offLoadData();
