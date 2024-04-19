@@ -4,7 +4,6 @@
 #include <EEPROM.h>
 #include "ADS1X15.h"
 #include <cstdint>
-#include <RTClib.h>
 #include <cmath>
 
 //imports for tft screen 
@@ -89,8 +88,6 @@ bool eepromCleared = false;
 
 ADS1115 ADS(0x48);
 
-RTC_PCF8563 rtc;
-
 uint32_t startTime = 0;
 uint32_t prevTime = 0;
 uint32_t numSamples = 0;
@@ -125,7 +122,6 @@ unsigned long lastPowerDebounceTime = 0;
 
 String importedDatetime = "";
 
-RTC_PCF8563 rtc;
 
 enum STATES {
   OFF, WELCOME, PROMPT, STREAM, STORE, SESSION_COMPLETE
@@ -172,13 +168,12 @@ class MyServerCallbacks: public BLEServerCallbacks {
 
 // This function will store the current date time into data struct for spi flash storage
 void storeCurrentDateTime() {
-  DateTime now = rtc.now();
-  currData.dateTime[0] = now.year(); // year
-  currData.dateTime[1] = now.month(); // month
-  currData.dateTime[2] = now.day(); // day
-  currData.dateTime[3] = now.hour(); // hour
-  currData.dateTime[4] = now.minute(); // minute
-  currData.dateTime[5] = now.second(); // second
+  currData.dateTime[0] = 1; // year
+  currData.dateTime[1] = 1; // month
+  currData.dateTime[2] = 1; // day
+  currData.dateTime[3] = 1; // hour
+  currData.dateTime[4] = 1; // minute
+  currData.dateTime[5] = 1; // second
 }
 
 void importDateTime() {
@@ -189,9 +184,12 @@ void importDateTime() {
   uint8_t hour = importedDatetime[3];
   uint8_t minute = importedDatetime[4];
   uint8_t second = importedDatetime[5];
-  rtc.adjust(DateTime(year, month,
-                      day, hour, 
-                      minute, second));
+  currData.dateTime[0] = year; // year
+  currData.dateTime[1] = month; // month
+  currData.dateTime[2] = day; // day
+  currData.dateTime[3] = hour; // hour
+  currData.dateTime[4] = minute; // minute
+  currData.dateTime[5] = second; // second
 }
 
 /**
@@ -288,19 +286,11 @@ void getAllData(std::vector<Data>& allData) {
 }
 
 void setup() {
-  // Set RTC to 1/1/2000 at midnight
-  //rtc.adjust(DateTime(2000, 1, 1, 0, 0, 0));
-  // Start rtc
- // Set RTC to 1/1/2000 at midnight
-  rtc.adjust(DateTime(2000, 1, 1, 1, 1, 1));
-  // Start rtc
-  rtc.start();
+  Wire.begin();
 
-  //rtc.start();
   EEPROM.begin(EEPROM_SIZE);  
   Serial.begin(115200);
-
-  Wire.begin();
+  storeCurrentDateTime();
 
   ADS.begin();
   ADS.setGain(0);      //  6.144 volt
@@ -661,7 +651,6 @@ void offLoadData() {
         muscleDatetimeOffloadArray[(dataIndex * DATETIME_BYTES) + dateIndex] = allData.at(dataIndex).dateTime[dateIndex];
       }
     }
-    importDateTime();
     pNumSessions->setValue(sessionCountInBytes(), sizeof(sessionCountInBytes()));
     pOffloadData->setValue(muscleDataOffloadArray, DATA_BYTES * allData.size());
     pDateTime->setValue(muscleDatetimeOffloadArray, DATETIME_BYTES * allData.size());
@@ -765,9 +754,6 @@ void dataAcquisitionForNoBLE()
 
 void nonBLEStore() {
     if (!oneSessionStreamed) {
-      if (indexToInsert == 0) {
-        storeCurrentDateTime();
-      }
 
       dataAcquisitionForNoBLE();
       
@@ -974,6 +960,7 @@ void stateMachine() {
       //doesn't account for button press yet 
 
       if (deviceConnected) {
+        importDateTime();
         curr_state = STREAM;
       }
       else {
