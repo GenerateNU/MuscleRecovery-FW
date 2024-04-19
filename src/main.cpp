@@ -284,6 +284,12 @@ void setup() {
   // Set RTC to 1/1/2000 at midnight
   //rtc.adjust(DateTime(2000, 1, 1, 0, 0, 0));
   // Start rtc
+  currData.dateTime[0] = 1;
+  currData.dateTime[1] = 1;
+  currData.dateTime[2] = 1;
+  currData.dateTime[3] = 1;
+  currData.dateTime[4] = 1;
+  currData.dateTime[5] = 1;
 
   //rtc.start();
   EEPROM.begin(EEPROM_SIZE);  
@@ -681,7 +687,7 @@ void saveData() {
       currData.muscleData[numDataSent] = averagedEMGValue;
       // this is jank, fix later
       if (numDataSent < 6) {
-        currData.dateTime[numDataSent] = 0;
+        currData.dateTime[numDataSent] = 1;
       }
       numDataSent++;
     }
@@ -761,6 +767,7 @@ void dataAcquisitionForNoBLE()
     updateDisplay(std::floor(average * 100.0) / 100.0);
    
     currData.muscleData[indexToInsert] = pointToSend;
+
     indexToInsert++;
   }
 }
