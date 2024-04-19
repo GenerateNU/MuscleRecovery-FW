@@ -666,25 +666,6 @@ void offLoadData() {
   }
 }
 
-/**
- * Saves raw Data from a session started from button press into flash.
-*/
-void saveData() {
-  if (sessionStartedFromButtonPress()) {
-    Serial.println("Session started off button press");
-    if (numDataSent < SESSION_BYTES) {
-      Serial.println("Getting array of data");
-      currData.muscleData[numDataSent] = averagedEMGValue;
-      numDataSent++;
-    }
-    else if (numDataSent == SESSION_BYTES) {
-      Serial.println("Saving data");
-      //storeData(currData);
-      numDataSent = 0;
-    }
-  }
-}
-
 double filter(double inputValue) {
     lastOutput = alpha * inputValue + (1 - alpha) * lastOutput;
     return lastOutput;
