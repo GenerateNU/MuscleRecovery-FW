@@ -89,7 +89,7 @@ bool eepromCleared = false;
 
 ADS1115 ADS(0x48);
 
-//RTC_PCF8563 rtc;
+RTC_PCF8563 rtc;
 
 uint32_t startTime = 0;
 uint32_t prevTime = 0;
