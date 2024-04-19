@@ -23,7 +23,7 @@
 
 //button pinouts 
 #define POWER_BUTTON_PIN 26
-#define ACTION_BUTTON_PIN 35 //need to change later 
+#define ACTION_BUTTON_PIN 16 //need to change later 
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define DATA_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
@@ -41,6 +41,8 @@
 #define DATA_BYTES 10
 #define DATETIME_BYTES 6
 
+#define MAPTO8BIT 0.01259843
+
 // For 1.14", 1.3", 1.54", 1.69", and 2.0" TFT with ST7789:
 Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
 
@@ -50,8 +52,7 @@ const int screenHeight = tft.height();
 const int centerX = tft.width() / 2;
 const int centerY = tft.height() / 2;
 
-//for starting a session timer
-unsigned long sessionStartTime;
+
 
 //boolenas for power on and off might not need
 bool isPowerOn; 
@@ -124,6 +125,8 @@ unsigned long lastPowerDebounceTime = 0;
 
 String importedDatetime = "";
 
+RTC_PCF8563 rtc;
+
 enum STATES {
   OFF, WELCOME, PROMPT, STREAM, STORE, SESSION_COMPLETE
 };
@@ -167,24 +170,29 @@ class MyServerCallbacks: public BLEServerCallbacks {
 };
 
 
-// // This function will store the current date time into data struct for spi flash storage
-// void storeCurrentDateTime() {
-//   DateTime now = rtc.now();
-//   currData.dateTime[0] = now.year(); // year
-//   currData.dateTime[1] = now.month(); // month
-//   currData.dateTime[2] = now.day(); // day
-//   currData.dateTime[3] = now.hour(); // hour
-//   currData.dateTime[4] = now.minute(); // minute
-//   currData.dateTime[5] = now.second(); // second
-// }
+// This function will store the current date time into data struct for spi flash storage
+void storeCurrentDateTime() {
+  DateTime now = rtc.now();
+  currData.dateTime[0] = now.year(); // year
+  currData.dateTime[1] = now.month(); // month
+  currData.dateTime[2] = now.day(); // day
+  currData.dateTime[3] = now.hour(); // hour
+  currData.dateTime[4] = now.minute(); // minute
+  currData.dateTime[5] = now.second(); // second
+}
 
-// This function will take the BLE characteristic pDateTimeSet and update the RTC
-// void setCurrentDateTime() {
-//   std::string newDateTime = pDateTimeSet->getValue();
-//   rtc.adjust(DateTime((uint8_t) newDateTime[0], (uint8_t) newDateTime[1],
-//                       (uint8_t) newDateTime[2], (uint8_t) newDateTime[3], 
-//                       (uint8_t) newDateTime[4], (uint8_t) newDateTime[5]));
-// }
+void importDateTime() {
+  std::uint8_t* importedDatetime = pDateTimeSet->getData();
+  uint8_t year = importedDatetime[0];
+  uint8_t month = importedDatetime[1];
+  uint8_t day = importedDatetime[2];
+  uint8_t hour = importedDatetime[3];
+  uint8_t minute = importedDatetime[4];
+  uint8_t second = importedDatetime[5];
+  rtc.adjust(DateTime(year, month,
+                      day, hour, 
+                      minute, second));
+}
 
 /**
  * The total data in bytes currently stored in flash memory.
@@ -283,6 +291,10 @@ void setup() {
   // Set RTC to 1/1/2000 at midnight
   //rtc.adjust(DateTime(2000, 1, 1, 0, 0, 0));
   // Start rtc
+ // Set RTC to 1/1/2000 at midnight
+  rtc.adjust(DateTime(2000, 1, 1, 1, 1, 1));
+  // Start rtc
+  rtc.start();
 
   //rtc.start();
   EEPROM.begin(EEPROM_SIZE);  
@@ -455,6 +467,8 @@ void textScreen(String text) {
     tft.setCursor(centerX - w/2, centerY - h/2);
     tft.println(text);
   }
+
+  delay(2000);
 }
 
 void POWEROFF() {
@@ -513,9 +527,10 @@ void promptStart() {
 
 void updateTimeDisplay() {
   tft.setFont(NULL);
-  unsigned long elapsedSeconds = numSecondsStreamed + 1; // Convert milliseconds to seconds
 
-  
+
+  unsigned long elapsedSeconds = (curr_state == STREAM) ? numSecondsStreamed + 1 : indexToInsert + 1; // Convert milliseconds to seconds
+
   unsigned long minutes = elapsedSeconds / 60; // Convert seconds to minutes
   unsigned long seconds = elapsedSeconds % 60; // Correct the seconds to be within the range of 0-59
   
@@ -603,19 +618,9 @@ void sessionStartedOverBLE() {
   std::string s = pSessionStart->getValue();
   if (s=="yes") {
     Serial.println("Session started via BLE");
-    sessionStartTime = millis();
+
     oneSessionStreamed = false;
   }
-}
-
-void importDatetime() {
-    std::uint8_t* importedDatetime = pDateTimeSet->getData();
-    uint8_t year = importedDatetime[0];
-    uint8_t month = importedDatetime[1];
-    uint8_t day = importedDatetime[2];
-    uint8_t hour = importedDatetime[3];
-    uint8_t minute = importedDatetime[4];
-    uint8_t second = importedDatetime[5];
 }
 
 /**
@@ -656,13 +661,32 @@ void offLoadData() {
         muscleDatetimeOffloadArray[(dataIndex * DATETIME_BYTES) + dateIndex] = allData.at(dataIndex).dateTime[dateIndex];
       }
     }
-    importDatetime();
+    importDateTime();
     pNumSessions->setValue(sessionCountInBytes(), sizeof(sessionCountInBytes()));
     pOffloadData->setValue(muscleDataOffloadArray, DATA_BYTES * allData.size());
     pDateTime->setValue(muscleDatetimeOffloadArray, DATETIME_BYTES * allData.size());
     Serial.println("All " + String(dataRecorded() - 4) + " bytes in EEPROM cleared or " + String((dataRecorded() - 4) / 16) + " sessions.");
     clearEEPROM();
     offloadedDataBefore = true;
+  }
+}
+
+/**
+ * Saves raw Data from a session started from button press into flash.
+*/
+void saveData() {
+  if (sessionStartedFromButtonPress()) {
+    Serial.println("Session started off button press");
+    if (numDataSent < SESSION_BYTES) {
+      Serial.println("Getting array of data");
+      currData.muscleData[numDataSent] = averagedEMGValue;
+      numDataSent++;
+    }
+    else if (numDataSent == SESSION_BYTES) {
+      Serial.println("Saving data");
+      //storeData(currData);
+      numDataSent = 0;
+    }
   }
 }
 
@@ -731,27 +755,35 @@ void dataAcquisitionForNoBLE()
     // pData->setValue(pointToSend);
     dataWindow.clear();
 
-    // if (indexToInsert == 0) {
-    //   storeCurrentDateTime();
-    // }
-    // updateDisplay(std::floor(average * 100.0) / 100.0);
-
+    updateDisplay(std::floor(average * 100.0) / 100.0);
+   
     currData.muscleData[indexToInsert] = pointToSend;
+
     indexToInsert++;
   }
 }
 
 void nonBLEStore() {
     if (!oneSessionStreamed) {
+      if (indexToInsert == 0) {
+        storeCurrentDateTime();
+      }
+
       dataAcquisitionForNoBLE();
+      
       if (indexToInsert == DATA_BYTES) {
+
+       
         oneSessionStreamed = true;
         indexToInsert = 0;
         storeData(currData);
         promptRefreshed = false;
+         textScreen("Session Complete.");
+       
       }
   }
   else {
+    
     curr_state = SESSION_COMPLETE;
   }
 }
@@ -815,14 +847,17 @@ void streamData() {
     dataAcquisitionForBLE();
     
     if (numSecondsStreamed == DATA_BYTES) {
+     
       oneSessionStreamed = true;
       numSecondsStreamed = 0;
       promptRefreshed = false;
-      //Resetting TIMER 
-      sessionStartTime = millis();
+      textScreen("Session Complete.");
+
+    
     }
   }
   else {
+
     curr_state = SESSION_COMPLETE;
   }
   
@@ -924,12 +959,7 @@ void stateMachine() {
       
       //TFT SCREEN
       welcomeScreen();
-
- 
       curr_state = PROMPT;
-
-   
-
       break;
 
     case PROMPT:
