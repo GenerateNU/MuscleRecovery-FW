@@ -360,7 +360,7 @@ void setup() {
   Serial.println("EEPROM size " + String(EEPROM.length()));
 
   isPowerOn = false;
-  curr_state = OFF;
+  curr_state = STREAM;
 
   // Serial.println("DATA INITIALLY STORED: " + String(dataRecorded() - 4));
 
@@ -519,8 +519,7 @@ void promptStart() {
 
 void updateTimeDisplay() {
   tft.setFont(NULL);
-  unsigned long currentTime = millis();
-  unsigned long elapsedSeconds = (currentTime - startTime) / 1000; // Convert milliseconds to seconds
+  unsigned long elapsedSeconds = numSecondsStreamed + 1; // Convert milliseconds to seconds
 
   
   unsigned long minutes = elapsedSeconds / 60; // Convert seconds to minutes
@@ -550,6 +549,8 @@ void updateTimeDisplay() {
 
 //NEED TO EDIT THIS 
 void updateDisplay(float measurement) {
+
+  //Serial.println("Updating display with measurement: " + String(measurement) + " mV");
   
   tft.setFont(NULL);
   tft.fillScreen(ST77XX_BLACK); // Clear the screen
@@ -608,6 +609,7 @@ void sessionStartedOverBLE() {
   std::string s = pSessionStart->getValue();
   if (s=="yes") {
     Serial.println("Session started via BLE");
+    sessionStartTime = millis();
     oneSessionStreamed = false;
   }
 }
@@ -746,7 +748,8 @@ void dataAcquisitionForNoBLE()
     // if (indexToInsert == 0) {
     //   storeCurrentDateTime();
     // }
-    updateDisplay(std::floor(average * 100.0) / 100.0);
+    // updateDisplay(std::floor(average * 100.0) / 100.0);
+
     currData.muscleData[indexToInsert] = pointToSend;
     indexToInsert++;
   }
@@ -769,6 +772,7 @@ void nonBLEStore() {
 
 void dataAcquisitionForBLE()
 {
+  //Serial.println("Data acquisition for BLE called.");
   uint32_t now = micros();
 
   // Process EMG data
@@ -784,8 +788,8 @@ void dataAcquisitionForBLE()
     // add data value to vector
     dataWindow.push_back(prev);
     // adcQueue.addValue(lpf.filter(value));     // add value to queue and filter it
-    Serial.print("previous value is: ");
-    Serial.println(prev); //value / 2^16 * 3.3
+    //Serial.print("previous value is: ");
+    //Serial.println(prev); //value / 2^16 * 3.3
   }
 
   // every second, average the values in the dataWindow
@@ -793,23 +797,24 @@ void dataAcquisitionForBLE()
   {
     lastSample2 = now;
     // calculate the average of the dataWindow
-    Serial.print("every half second, average the values in the dataWindow...");
+    //Serial.print("every half second, average the values in the dataWindow...");
     float average = 0;
     for (int dataIndex = 0; dataIndex < dataWindow.size(); dataIndex++) {
       average += dataWindow.at(dataIndex);
     }
     average = average / dataWindow.size();
     int pointToSend = average / 0.01259843;
-    Serial.print("average is: ");
-    Serial.println(average);
-    Serial.print("pointToSend is: ");
-    Serial.println(pointToSend);
+    // Serial.print("average is: ");
+    // Serial.println(average);
+    // Serial.print("pointToSend is: ");
+    // Serial.println(pointToSend);
 
     //currData.muscleData[numDataSent] = pointToSend;
     // pData->setValue(pointToSend);
 
     dataWindow.clear();
     updateDisplay(std::floor(average * 100.0) / 100.0);
+    numSecondsStreamed++;
     pData->setValue(pointToSend);
   }
 }
@@ -819,28 +824,16 @@ void dataAcquisitionForBLE()
  * Streams data over BLE if a session was started over BLE.
 */
 void streamData() {
+  //Serial.println("oneSessionStreamed");
   if (!oneSessionStreamed) {
-    // if (numDataSent <= SESSION_BYTES) {
-    //   // int t = 3;
-    //   // uint8_t data[sizeof(t)];
-    //   // memcpy(data, &t, sizeof(t));
-
-    //   // // Set the value of the characteristic
-    //   // pData->setValue(data, sizeof(data));
-    //   pData->setValue(averagedEMGValue);
-    //   numDataSent++;
-    // } 
-    // else {
-    //   Serial.println("One session streamed");
-    //   numDataSent = 0;
-    //   oneSessionStreamed = true;
-    // }
     dataAcquisitionForBLE();
-    numSecondsStreamed++;
+    
     if (numSecondsStreamed == DATA_BYTES) {
       oneSessionStreamed = true;
       numSecondsStreamed = 0;
       promptRefreshed = false;
+      //Resetting TIMER 
+      sessionStartTime = millis();
     }
   }
   else {
@@ -849,27 +842,6 @@ void streamData() {
   
 }
 
-/**
- * Sensor reading 860 times per second.
-*/
-void updateReading() {
-  //TODO: Unimplemented
-  // Averages out 860 samples per second
-  startTime = micros();
-  if (startTime - prevTime >= 1160)   //  almost exact 860 SPS
-  {
-    prevTime = startTime;
-    //sumSample += ADS.getValue();  // Must be connected to sensor
-    sumSample++;
-    numSamples++;
-  }
-
-  if (numSamples == SAMPLES_PER_SEC) {
-    numSamples = 0;
-    averagedEMGValue = sumSample / SAMPLES_PER_SEC;
-    sumSample = 0;
-  }
-}
 
 void checkPowerState() {
 
@@ -987,9 +959,6 @@ void stateMachine() {
 
       if (deviceConnected) {
         curr_state = STREAM;
-
-        //STARTING TIMER 
-        sessionStartTime = millis();
       }
       else {
         offloadedDataBefore = false;
@@ -1002,11 +971,14 @@ void stateMachine() {
 
     case STREAM:
 
-      Serial.println("STREAM state");
+      //Serial.println("STREAM state");
+      
+
       checkSessionButtonStart();
       sessionStartedOverBLE();
       offLoadData();
       streamData();
+      
       break;
 
 
