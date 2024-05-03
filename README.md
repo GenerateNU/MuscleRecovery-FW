@@ -1,4 +1,4 @@
-# <Muscle Recovery Firmware>
+## <Muscle Recovery Firmware>
 The Muscle Recovery Wearable acts as a peripheral/server that is capable of both storing session data and streaming data to a BLE (Bluetooth Low Energy) connectable device. The C++ Bare Metal development of the device gives the user the option to use the Muscle Recovery Wearable as either a standalone device, connected device, or a mixture of both. This gives the user more flexibility to use the device as they deem fit and prevents the extra Bluetooth capability of the device from standing in the way of its primary purpose.
 
 Because of the microcontroller’s rather minimal input peripherals (the EMG sensor and a couple push buttons), we opted for Bare Metal Programming to keep our firmware simple and sequential. Figure X. goes into detail of the exact steps that occur throughout the program’s lifetime. A state machine exists in the void loop that loops between seven states: OFF, WELCOME, PROMPT, STREAM, STORE, SESSION_COMPLETE. 
