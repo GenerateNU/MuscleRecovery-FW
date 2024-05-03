@@ -29,6 +29,11 @@ On a BLE connection (STREAM state), the program follows a different path of proc
 - Visual Studio Code / PlatformIO for code development
 - Git CLI / GitHub Desktop for managing Git
 
+## Branches
+> To isolate conflicts for schematics and code, we use two branches to actually develop off of depending on discipline
+- `develop/ecad` is for schematic development, please create PR's into this branch for schematics and operate in this branch for layout
+- `develop/src` is for code development, please create PR's into this branch for features
+
 ## References
 - Schematics + Components (WIP)
 
